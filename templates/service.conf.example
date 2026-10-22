@@ -1,0 +1,15 @@
+; Add a new service to supervisor/chroot.conf.tpl (or directly on device).
+; Then: supervisorctl reread && supervisorctl update
+
+[program:myservice]
+command=/opt/myservice/bin/myservice --flag
+directory=/opt/myservice
+priority=70
+startsecs=5
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/myservice.log
+stdout_logfile_maxbytes=2MB
+stdout_logfile_backups=1
+redirect_stderr=true
+; environment=KEY="value",KEY2="value2"

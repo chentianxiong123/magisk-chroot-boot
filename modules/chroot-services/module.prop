@@ -1,0 +1,6 @@
+id=chroot-services
+name=Chroot Services (supervisord + adbd)
+version=1.2.0
+versionCode=3
+author=chentianxiong123
+description=Start supervisord inside a Debian chroot and optionally enable adb TCP (example config included)

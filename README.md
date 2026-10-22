@@ -1,0 +1,135 @@
+# magisk-chroot-boot
+
+用两个 Magisk 模块，让 Android 开机后自动挂载 Debian chroot，并拉起
+[supervisord](http://supervisord.org/) 托管 chroot 内的服务。
+
+- `chroot-mount`：等开机完成，挂 `proc/sys/dev/devpts`，准备 tmpfs 和运行目录
+- `chroot-services`：用 `setsid` 脱离 Magisk 进程组启动 supervisord，可选开启 adb TCP
+
+supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和日志轮转；模块只做挂载和引导，
+所以增删服务不需要改模块。
+
+## 特性
+
+- 开机全自动，无需 init.d、Tasker 或额外 app
+- `kill -9` 后由 supervisor 自动拉起
+- 模块职责单一，服务定义集中在一个 supervisor conf
+- 幂等安装，可重复执行
+- 自带状态 / 日志 / 健康检查 / 备份 / 打包脚本
+- 真实服务配置与密钥留在本地 `config/`（gitignore），仓库只含占位示例
+
+## 启动链路
+
+```text
+Android 开机
+└─ magiskd
+   └─ late_start：执行 /data/adb/modules/*/service.sh
+      ├─ chroot-mount
+      │    ├─ 等 sys.boot_completed=1 且 /data/debian 存在
+      │    ├─ mount proc / sys / dev / devpts
+      │    ├─ 重建 /dev/ptmx
+      │    ├─ tmpfs：/tmp、/var/log、apt lists/cache
+      │    └─ 建 /run/sshd、/var/log/supervisor，写 resolv.conf
+      │
+      └─ chroot-services
+           ├─ 等 boot_completed 且 /data/debian/proc/version
+           ├─ setsid chroot → supervisord
+           └─ 可选：setprop service.adb.tcp.port 5555
+```
+
+`setsid` 是关键：Magisk 在模块 `service.sh` 退出时会清理该进程组，普通 `nohup &`
+会被一起杀掉。
+
+## 环境要求
+
+| 项 | 要求 |
+|---|---|
+| 系统 | Android 7.0+（已在 SDK 24 + Magisk v23 验证） |
+| Root | Magisk v23+，boot ramdisk 已 patch |
+| chroot | Debian 位于 `/data/debian` |
+| 主机 | Linux，`adb` 可用，设备已授权 |
+| 设备内 | `supervisor` 已安装（`apt install supervisor`） |
+
+## 快速开始
+
+```bash
+git clone <this-repo> && cd magisk-chroot-boot
+
+# 可选：放自己的服务定义（不会被提交）
+mkdir -p config
+cp templates/service.conf.example config/services.conf
+$EDITOR config/services.conf
+
+./install.sh
+
+adb reboot
+sleep 80
+./scripts/healthcheck.sh
+./scripts/status.sh
+```
+
+`install.sh` 的行为：
+
+1. 检查 adb、root、`/data/debian`；
+2. 把 `modules/*` 推到 `/data/adb/modules/`；
+3. 服务配置按优先级选择：
+   - 本地有 `config/services.conf` → 用它；
+   - 设备上已有 `/data/debian/etc/supervisor/conf.d/chroot.conf` → 保留不动；
+   - 都没有 → 安装 `supervisor/chroot.conf.tpl` 里的示例；
+4. 修权限并清理临时文件。
+
+## 常用命令
+
+```bash
+./scripts/status.sh                 # Magisk 版本 + supervisor 状态
+./scripts/healthcheck.sh            # supervisor 健康检查（可加端口）
+PORTS="22 8080" ./scripts/healthcheck.sh
+./scripts/logs.sh <name> 100        # 某个服务最近 100 行
+./scripts/logs.sh supervisord       # supervisor 主日志
+./scripts/backup.sh                 # 备份模块与配置
+./build.sh                          # 打包成 Magisk 可安装 zip
+```
+
+设备内直接操作：
+
+```bash
+CTL="/data/debian/bin/busybox chroot /data/debian /usr/bin/supervisorctl -c /etc/supervisor/supervisord.conf"
+$CTL status
+$CTL restart <name>
+$CTL stop all
+```
+
+## 目录结构
+
+```text
+.
+├── install.sh / uninstall.sh
+├── build.sh                       # 生成 dist/*.zip
+├── modules/
+│   ├── chroot-mount/              # 挂载模块
+│   └── chroot-services/           # supervisord 引导模块
+├── meta/META-INF/                 # Magisk 安装器模板
+├── supervisor/chroot.conf.tpl     # 示例服务配置
+├── scripts/                       # status / logs / healthcheck / backup / device-install
+├── templates/service.conf.example # 新增服务的模板
+├── config/                        # 本地真实配置与密钥（gitignore）
+└── docs/                          # 架构、运维、排错、Magisk 修复
+```
+
+## 文档
+
+- [docs/architecture.md](docs/architecture.md) — 启动链路、职责边界、路径
+- [docs/operations.md](docs/operations.md) — 加服务、升级、备份、回滚
+- [docs/troubleshooting.md](docs/troubleshooting.md) — 已知坑与排查表
+- [docs/magisk-v23-repair.md](docs/magisk-v23-repair.md) — Magisk 安装残缺时的修复方法
+
+## 安全
+
+- 仓库不含真实服务配置；`config/` 整个目录被 gitignore。
+- `adb tcp 5555` 无认证，只建议在可信内网开启；不需要就删掉 `chroot-services/service.sh`
+  里的 setprop/stop/start 三行。
+- 服务自己的密钥放在 chroot 内，不要写进模块或本仓库。
+
+## License
+
+MIT

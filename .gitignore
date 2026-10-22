@@ -1,0 +1,8 @@
+# Local-only: real service definitions, secrets, device overrides
+config/
+
+dist/
+backups/
+*.zip
+*.tgz
+.DS_Store
