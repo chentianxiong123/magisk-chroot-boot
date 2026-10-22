@@ -127,11 +127,13 @@ $CTL stop all
 - [docs/operations.md](docs/operations.md) — 加服务、升级、备份、回滚
 - [docs/troubleshooting.md](docs/troubleshooting.md) — 已知坑与排查表
 - [docs/magisk-v23-repair.md](docs/magisk-v23-repair.md) — Magisk 安装残缺时的修复方法
+- [docs/legacy-autoboot.md](docs/legacy-autoboot.md) — 旧版 AutoBoot.apk 方案细节（已弃用）
 
 ## 安全
 
 - 仓库不含真实服务配置；`config/` 整个目录被 gitignore。
-- `adb tcp 5555` 无认证，只建议在可信内网开启；不需要就禁用模块：
+- `adb tcp 5555` 仍使用 adb 密钥认证（`ro.build.type=user` 的机器无法像调试版那样关闭），
+  但仍建议只在可信内网开启；不需要就禁用模块：
   `touch /data/adb/modules/adb-tcp/disable` 后重启，或直接删除该模块目录。
 - 服务自己的密钥放在 chroot 内，不要写进模块或本仓库。
 

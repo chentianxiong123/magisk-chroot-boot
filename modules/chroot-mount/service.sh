@@ -20,6 +20,10 @@ mkdir -p /data/debian/var/log/supervisor
 /data/debian/bin/busybox mount -t tmpfs -o size=128M tmpfs /data/debian/var/lib/apt/lists 2>/dev/null
 /data/debian/bin/busybox mount -t tmpfs -o size=128M tmpfs /data/debian/var/cache/apt 2>/dev/null
 chmod 755 /data/debian/run/sshd 2>/dev/null
+DNS1=$(getprop net.dns1)
+DNS2=$(getprop net.dns2)
 echo "" > /data/debian/etc/resolv.conf 2>/dev/null
-echo nameserver 192.168.31.1 >> /data/debian/etc/resolv.conf
+if [ -n "$DNS1" ]; then echo "nameserver $DNS1" >> /data/debian/etc/resolv.conf; fi
+if [ -n "$DNS2" ]; then echo "nameserver $DNS2" >> /data/debian/etc/resolv.conf; fi
+if [ ! -s /data/debian/etc/resolv.conf ]; then echo "nameserver 1.1.1.1" >> /data/debian/etc/resolv.conf; fi
 log "Chroot mounts done"

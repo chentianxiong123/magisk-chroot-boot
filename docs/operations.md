@@ -120,7 +120,7 @@ adb reboot
 
 ## 安全
 
-- `adb tcp 5555` 无认证，公网必须关闭：`touch /data/adb/modules/adb-tcp/disable`
-  后重启，或直接删除 `adb-tcp` 模块。
+- `adb tcp 5555` 仍使用 adb 密钥认证（user build 无法像调试版那样免认证），但公网仍应关闭：
+  `touch /data/adb/modules/adb-tcp/disable` 后重启，或直接删除 `adb-tcp` 模块。
 - 服务自己的管理端口尽量只监听 `127.0.0.1`，或用防火墙限制。
 - `config/` 整个目录不进仓库；真实密钥放在 chroot 内并 `chmod 600`。
