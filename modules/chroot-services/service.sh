@@ -4,6 +4,7 @@ while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done
 while [ ! -f /data/debian/proc/version ]; do sleep 1; done
 D=/data/debian
 log() { echo "[services] $1" | tee -a /data/local/tmp/services.log; }
+unset LD_PRELOAD LD_LIBRARY_PATH
 log "Starting supervisord..."
 n=0
 while [ $n -lt 3 ]; do
