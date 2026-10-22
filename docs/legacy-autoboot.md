@@ -14,6 +14,20 @@
 
 APK 很小（约 12 KB，dex 约 4 KB），本质是一个「开机以 root 跑一个配置文件的命令」的壳。
 
+## 实现原理（反编译推断）
+
+`classes.dex` 里的字符串和类结构显示它只做三件事：
+
+1. `BootReceiver.onReceive()` 收到 `BOOT_COMPLETED` 后起一个线程，先 `Thread.sleep()` 等几秒，
+   给系统/存储留出就绪时间；
+2. 用 `File` / `FileReader` / `BufferedReader` 打开 `/data/autoboot.conf`，`readLine()` 逐行读，
+   `trim()` 后跳过空行/注释（`startsWith` / `equals` 判断）；
+3. 对每行命令调用 `Runtime.exec(new String[]{"/system/xbin/su", "0"})`，把命令和 `exit`
+   写进 `getOutputStream()`，`flush()` / `close()`，`waitFor()` 等它结束，再处理下一行。
+
+`MainActivity` 是同一套逻辑的手动触发入口，也用于首次运行时弹出 Flyme 的 su 授权框。
+它没有常驻 Service、没有定时任务，也不联网。
+
 ## 为什么当年要做成系统应用
 
 1. Flyme 的 ADB 安装受限，`adb install` 报 `INSTALL_FAILED_USER_RESTRICTED`，
@@ -66,33 +80,47 @@ p.waitFor();
 - 模块可版本管理、幂等安装、备份/回滚，比「改系统分区 + 一个配置约定」更好维护。
 - 不再依赖 Flyme su 的授权弹窗行为。
 
-## 当前状态与清理
+## 当前状态：已卸载（2026-10-22）
 
-现在设备上 `/data/autoboot.conf` **已不存在**，所以 AutoBoot 开机是空转（读完文件发现不存在，什么也不做）。
-
-安全做法是冻结而不是物理删除（可逆、无 OTA/verity 风险）：
+设备上 `/data/autoboot.conf` **已不存在**，AutoBoot 开机是空转（读完文件发现不存在，什么都不做），
+因此已将其卸载：
 
 ```bash
-# 冻结
+# 先冻结确认无影响
 adb shell su -c 'pm disable-user --user 0 com.meizu.autoboot'
-# 恢复
+# 确认空转后，对当前用户卸载
+adb shell su -c 'pm uninstall --user 0 com.meizu.autoboot'
+# -> Success
+```
+
+结果：
+
+| 检查 | 结果 |
+|---|---|
+| `pm list packages \| grep autoboot` | 无输出（user 0 已不可见） |
+| `pm list packages -u \| grep autoboot` | 仍在（说明只是对 user 0 卸载） |
+| `pm path com.meizu.autoboot` | 空 |
+
+注意：`pm uninstall --user 0` 只是「对当前用户卸载」，`/system/app/AutoBoot/AutoBoot.apk`
+**仍然保留**，所以没有 OTA / dm-verity 风险，也随时可以恢复。没有物理删除系统分区文件。
+
+### 恢复
+
+```bash
+adb shell su -c 'pm install-existing --user 0 com.meizu.autoboot'
+# 若固件不支持 install-existing，退回系统应用状态可用：
 adb shell su -c 'pm enable com.meizu.autoboot'
 ```
 
-验证：
+彻底物理删除（不推荐，收益仅约 12 KB，且会增加 OTA / verity 不确定性）：
 
 ```bash
-adb shell 'pm list packages -d | grep autoboot'   # 出现在禁用列表
-adb shell 'dumpsys package com.meizu.autoboot | grep -E "enabled=|hidden="'
-# enabled=3 表示 DISABLED_USER，hidden=false 表示不是隐藏
+adb shell su -c 'mount -o rw,remount /system && rm -rf /system/app/AutoBoot'
 ```
-
-不推荐物理删除：要 remount `/system` 再删 `AutoBoot.apk`，收益只有 12 KB，
-还会增加 OTA / dm-verity 的不确定性。
 
 ## 回滚到旧方案
 
-1. 恢复 `/data/autoboot.conf` 及其引用的脚本；
-2. `pm enable com.meizu.autoboot`；
+1. `pm install-existing --user 0 com.meizu.autoboot`（或 `pm enable`）重新挂上 APK；
+2. 恢复 `/data/autoboot.conf` 及其引用的脚本；
 3. 确认 `/system/xbin/su` 可用且已授权；
 4. 不要再同时启用 Magisk 的 `chroot-mount` / `chroot-services`，否则会重复挂载/重复拉起。
