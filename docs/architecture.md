@@ -16,11 +16,14 @@ Android 开机
          │    ├─ mkdir /run/sshd、/var/log/supervisor
          │    └─ 写 /etc/resolv.conf
          │
-         └─ chroot-services
-              ├─ 等 boot_completed 且 /data/debian/proc/version
-              ├─ setsid chroot → supervisord -c /etc/supervisor/supervisord.conf
-              ├─ 轮询 supervisorctl pid，最多 3 次
-              └─ 可选：setprop service.adb.tcp.port 5555 + stop/start adbd
+         ├─ chroot-services
+         │    ├─ 等 boot_completed 且 /data/debian/proc/version
+         │    ├─ setsid chroot → supervisord -c /etc/supervisor/supervisord.conf
+         │    └─ 轮询 supervisorctl pid，最多 3 次
+         │
+         └─ adb-tcp（可选，独立模块）
+              ├─ 等 boot_completed
+              └─ setprop service.adb.tcp.port 5555 + stop/start adbd
 ```
 
 关键点：`setsid` 必须有。Magisk 在模块 `service.sh` 退出时会清理该进程组，
@@ -30,7 +33,7 @@ supervisord 必须脱离出去才能长期存活。
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| Magisk 模块 | 挂载、tmpfs、目录准备、拉起 supervisord、可选开 adb | 业务进程的启停/重启/日志 |
+| Magisk 模块 | 挂载、tmpfs、目录准备、拉起 supervisord；adb 由独立模块负责 | 业务进程的启停/重启/日志 |
 | supervisord | 服务启动顺序、崩溃重拉、日志轮转、统一启停 | 文件系统挂载、adb |
 
 这样划分的好处：加服务只改 supervisor 配置；模块保持极简，出错面小。
@@ -69,6 +72,7 @@ redirect_stderr=true
 |---|---|---|
 | `/data/adb/modules/chroot-mount` | — | 挂载模块 |
 | `/data/adb/modules/chroot-services` | — | 引导模块 |
+| `/data/adb/modules/adb-tcp` | — | 可选：adb over TCP 模块 |
 | `/data/debian` | `/` | Debian 根 |
 | `/data/debian/etc/supervisor/conf.d/chroot.conf` | `/etc/supervisor/conf.d/chroot.conf` | 服务定义 |
 | `/data/debian/var/log` | `/var/log` | tmpfs 64M |

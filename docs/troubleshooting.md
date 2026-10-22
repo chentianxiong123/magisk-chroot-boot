@@ -17,7 +17,8 @@
 | sshd 起不来 / 连上立刻断 | `/dev/ptmx` 属主不对（Android bind 过来是 radio:radio） | 模块里重建 ptmx：`mknod c 5 2` + `chown root:root` + `chmod 666`，devpts `gid=5,mode=620` |
 | 端口被旧进程占着，supervisor 拉不起来 | 手动启动过、或老的 nohup 进程还在 | `pkill -f <进程名>`，或先 `supervisorctl stop all` 再清残留 |
 | 改了配置不生效 | supervisor 没重载 | `supervisorctl reread && supervisorctl update`，单个服务用 `restart <name>` |
-| 开机后 adb 断了 | 模块里重启了 adbd | 等 10~20 秒；USB 直连兜底 |
+| 开机后 adb 断了 | `adb-tcp` 模块重启了 adbd | 等 10~20 秒；USB 直连兜底 |
+| 不想开 adb 5555 | `adb-tcp` 模块默认开启 | `touch /data/adb/modules/adb-tcp/disable` 后重启 |
 | 想确认模块是否被 Magisk 加载 | 模块目录缺 `service.sh` 执行位或权限不对 | `ls -l /data/adb/modules/*/service.sh` 应为 755 root:root |
 | `install.sh` 推送后解包失败 | Android 自带 tar 不支持 gzip | 脚本已改用 `/data/adb/magisk/busybox tar xzf` |
 | 开机后服务全没起，但模块已启用 | 等开机完成超时 / `/data/debian` 未挂载 | 看 `/data/local/tmp/services.log`；确认 `/data/debian/proc/version` 可读 |
@@ -43,6 +44,7 @@ PORTS="22 8080" ./scripts/healthcheck.sh
 |---|---|---|
 | 模块 1 | `/data/local/tmp/chroot-mount.log` | 挂载过程，跨重启保留 |
 | 模块 2 | `/data/local/tmp/services.log` | supervisord 启动/重试，跨重启保留 |
+| adb 模块 | `/data/local/tmp/adb-tcp.log` | adb TCP 开启记录 |
 | supervisord | `/data/debian/var/log/supervisor/supervisord.log` | 重启清空 |
 | 各服务 | `/data/debian/var/log/supervisor/<name>.log` | 重启清空 |
 | Magisk | `/cache/magisk.log` | magiskd 自己的日志 |

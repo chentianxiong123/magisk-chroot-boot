@@ -4,7 +4,8 @@
 [supervisord](http://supervisord.org/) 托管 chroot 内的服务。
 
 - `chroot-mount`：等开机完成，挂 `proc/sys/dev/devpts`，准备 tmpfs 和运行目录
-- `chroot-services`：用 `setsid` 脱离 Magisk 进程组启动 supervisord，可选开启 adb TCP
+- `chroot-services`：用 `setsid` 脱离 Magisk 进程组启动 supervisord
+- `adb-tcp`：可选，开机后开启 adb over TCP（5555），与 chroot 完全独立
 
 supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和日志轮转；模块只做挂载和引导，
 所以增删服务不需要改模块。
@@ -12,6 +13,7 @@ supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和�
 ## 特性
 
 - 开机全自动，无需 init.d、Tasker 或额外 app
+- adb over TCP 独立成模块，可单独启用/删除，不影响 chroot
 - `kill -9` 后由 supervisor 自动拉起
 - 模块职责单一，服务定义集中在一个 supervisor conf
 - 幂等安装，可重复执行
@@ -31,10 +33,12 @@ Android 开机
       │    ├─ tmpfs：/tmp、/var/log、apt lists/cache
       │    └─ 建 /run/sshd、/var/log/supervisor，写 resolv.conf
       │
-      └─ chroot-services
-           ├─ 等 boot_completed 且 /data/debian/proc/version
-           ├─ setsid chroot → supervisord
-           └─ 可选：setprop service.adb.tcp.port 5555
+      ├─ chroot-services
+      │    ├─ 等 boot_completed 且 /data/debian/proc/version
+      │    └─ setsid chroot → supervisord
+      │
+      └─ adb-tcp（可选，独立模块）
+           └─ setprop service.adb.tcp.port 5555 + stop/start adbd
 ```
 
 `setsid` 是关键：Magisk 在模块 `service.sh` 退出时会清理该进程组，普通 `nohup &`
@@ -71,7 +75,7 @@ sleep 80
 `install.sh` 的行为：
 
 1. 检查 adb、root、`/data/debian`；
-2. 把 `modules/*` 推到 `/data/adb/modules/`；
+2. 把 `modules/*` 推到 `/data/adb/modules/`（含可选的 `adb-tcp`）；
 3. 服务配置按优先级选择：
    - 本地有 `config/services.conf` → 用它；
    - 设备上已有 `/data/debian/etc/supervisor/conf.d/chroot.conf` → 保留不动；
@@ -107,7 +111,8 @@ $CTL stop all
 ├── build.sh                       # 生成 dist/*.zip
 ├── modules/
 │   ├── chroot-mount/              # 挂载模块
-│   └── chroot-services/           # supervisord 引导模块
+│   ├── chroot-services/           # supervisord 引导模块
+│   └── adb-tcp/                   # 可选：adb over TCP
 ├── meta/META-INF/                 # Magisk 安装器模板
 ├── supervisor/chroot.conf.tpl     # 示例服务配置
 ├── scripts/                       # status / logs / healthcheck / backup / device-install
@@ -126,8 +131,8 @@ $CTL stop all
 ## 安全
 
 - 仓库不含真实服务配置；`config/` 整个目录被 gitignore。
-- `adb tcp 5555` 无认证，只建议在可信内网开启；不需要就删掉 `chroot-services/service.sh`
-  里的 setprop/stop/start 三行。
+- `adb tcp 5555` 无认证，只建议在可信内网开启；不需要就禁用模块：
+  `touch /data/adb/modules/adb-tcp/disable` 后重启，或直接删除该模块目录。
 - 服务自己的密钥放在 chroot 内，不要写进模块或本仓库。
 
 ## License

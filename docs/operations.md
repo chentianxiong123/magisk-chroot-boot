@@ -14,6 +14,7 @@ sleep 80
 ```
 
 前提：设备已 root（`su -c id` 返回 uid=0）、`/data/debian` 存在、chroot 内已装 supervisor。
+不需要 adb TCP 时，安装后禁用 `adb-tcp` 模块即可。
 
 不提供 `config/services.conf` 时，`install.sh` 会安装 `supervisor/chroot.conf.tpl`
 里的示例；设备上已有配置则不会覆盖。
@@ -119,7 +120,7 @@ adb reboot
 
 ## 安全
 
-- `adb tcp 5555` 无认证，公网必须关闭：删掉 `chroot-services/service.sh` 中
-  setprop/stop/start 三行。
+- `adb tcp 5555` 无认证，公网必须关闭：`touch /data/adb/modules/adb-tcp/disable`
+  后重启，或直接删除 `adb-tcp` 模块。
 - 服务自己的管理端口尽量只监听 `127.0.0.1`，或用防火墙限制。
 - `config/` 整个目录不进仓库；真实密钥放在 chroot 内并 `chmod 600`。

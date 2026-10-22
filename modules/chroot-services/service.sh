@@ -17,8 +17,4 @@ while [ $n -lt 3 ]; do
   fi
   log "Supervisord attempt $n failed"
 done
-log "Starting adbd 5555..."
-setprop service.adb.tcp.port 5555
-stop adbd
-start adbd
 log "All done"
