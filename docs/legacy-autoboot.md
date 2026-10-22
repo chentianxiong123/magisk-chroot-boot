@@ -80,47 +80,60 @@ p.waitFor();
 - 模块可版本管理、幂等安装、备份/回滚，比「改系统分区 + 一个配置约定」更好维护。
 - 不再依赖 Flyme su 的授权弹窗行为。
 
-## 当前状态：已卸载（2026-10-22）
+## 当前状态：已彻底删除（2026-10-22）
 
-设备上 `/data/autoboot.conf` **已不存在**，AutoBoot 开机是空转（读完文件发现不存在，什么都不做），
-因此已将其卸载：
+设备上 `/data/autoboot.conf` 已不存在，AutoBoot 开机是空转（读完文件发现不存在，什么都不做），
+确认无影响后分两步移除。
+
+第一步，对当前用户卸载（先做可逆验证）：
 
 ```bash
-# 先冻结确认无影响
-adb shell su -c 'pm disable-user --user 0 com.meizu.autoboot'
-# 确认空转后，对当前用户卸载
 adb shell su -c 'pm uninstall --user 0 com.meizu.autoboot'
 # -> Success
 ```
+
+第二步，确认 APK 已备份、md5 一致后，从系统分区物理删除：
+
+```bash
+adb shell su -c 'mount -o rw,remount /system'
+adb shell su -c 'rm -rf /system/app/AutoBoot'
+adb shell su -c 'sync'
+adb shell su -c 'mount -o ro,remount /system'
+```
+
+删除前已备份：`AutoBoot.apk`（12,631 字节，md5 `ce6061c98d93eb4832d9821c6cea6168`）。
 
 结果：
 
 | 检查 | 结果 |
 |---|---|
-| `pm list packages \| grep autoboot` | 无输出（user 0 已不可见） |
-| `pm list packages -u \| grep autoboot` | 仍在（说明只是对 user 0 卸载） |
+| `ls -d /system/app/AutoBoot` | `No such file or directory` |
 | `pm path com.meizu.autoboot` | 空 |
+| `pm list packages \| grep autoboot` | 无输出 |
+| `pm list packages -u \| grep autoboot` | 仍显示（`packages.xml` 的残留记录，不影响使用，重启后 PMS 重新扫描通常会清掉） |
+| `/data/data/com.meizu.autoboot` | 已不存在 |
 
-注意：`pm uninstall --user 0` 只是「对当前用户卸载」，`/system/app/AutoBoot/AutoBoot.apk`
-**仍然保留**，所以没有 OTA / dm-verity 风险，也随时可以恢复。没有物理删除系统分区文件。
+分区状态：删除时 `/system` 临时 remount rw，完成后已 remount ro；整个过程没有重启设备。
 
 ### 恢复
 
-```bash
-adb shell su -c 'pm install-existing --user 0 com.meizu.autoboot'
-# 若固件不支持 install-existing，退回系统应用状态可用：
-adb shell su -c 'pm enable com.meizu.autoboot'
-```
-
-彻底物理删除（不推荐，收益仅约 12 KB，且会增加 OTA / verity 不确定性）：
+APK 已从 `/system` 删除，`pm install-existing` 不再适用。需要恢复时把备份放回系统应用目录：
 
 ```bash
-adb shell su -c 'mount -o rw,remount /system && rm -rf /system/app/AutoBoot'
+adb push AutoBoot.apk /data/local/tmp/AutoBoot.apk
+adb shell su -c 'mount -o rw,remount /system'
+adb shell su -c 'mkdir -p /system/app/AutoBoot'
+adb shell su -c 'cp /data/local/tmp/AutoBoot.apk /system/app/AutoBoot/AutoBoot.apk'
+adb shell su -c 'chmod 644 /system/app/AutoBoot/AutoBoot.apk'
+adb shell su -c 'mount -o ro,remount /system'
+adb reboot
 ```
+
+重启后系统会重新扫描并把它作为系统应用安装。
 
 ## 回滚到旧方案
 
-1. `pm install-existing --user 0 com.meizu.autoboot`（或 `pm enable`）重新挂上 APK；
+1. 按上面的「恢复」把 APK 放回 `/system/app/AutoBoot/` 并重启；
 2. 恢复 `/data/autoboot.conf` 及其引用的脚本；
 3. 确认 `/system/xbin/su` 可用且已授权；
 4. 不要再同时启用 Magisk 的 `chroot-mount` / `chroot-services`，否则会重复挂载/重复拉起。
