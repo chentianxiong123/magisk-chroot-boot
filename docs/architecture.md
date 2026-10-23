@@ -21,7 +21,7 @@ Android 开机
          │
          ├─ chroot-services
          │    ├─ 等 boot_completed 且 /data/debian/proc/version
-         │    ├─ setsid chroot → supervisord -c /etc/supervisor/supervisord.conf
+         │    ├─ setsid chroot → su - root → supervisord -c /etc/supervisor/supervisord.conf
          │    └─ 轮询 supervisorctl pid，最多 3 次
          │
          └─ adb-tcp（可选，独立模块）
@@ -30,7 +30,10 @@ Android 开机
 ```
 
 关键点：`setsid` 必须有。Magisk 在模块 `service.sh` 退出时会清理该进程组，
-supervisord 必须脱离出去才能长期存活。
+supervisord 必须脱离出去才能长期存活。`su - root` 让 supervisord 读取 chroot 的
+`/etc/passwd` / `/etc/group`，继承 `inet(3003)` / `net_raw(3004)`；直接 `chroot`
+会继承 Android root 的空补充组，服务内 `ping` / raw socket 会被
+`CONFIG_ANDROID_PARANOID_NETWORK` 拒绝。
 
 ## 两层职责
 

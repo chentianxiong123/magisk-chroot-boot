@@ -18,7 +18,8 @@
 | 端口被旧进程占着，supervisor 拉不起来 | 手动启动过、或老的 nohup 进程还在 | `pkill -f <进程名>`，或先 `supervisorctl stop all` 再清残留 |
 | 改了配置不生效 | supervisor 没重载 | `supervisorctl reread && supervisorctl update`，单个服务用 `restart <name>` |
 | 开机后 adb 断了 | `adb-tcp` 模块重启了 adbd | 等 10~20 秒；USB 直连兜底 |
-| chroot 里 `ping` 报 `socket: 权限不够`、域名解析 `暂时性错误`，但 `curl`/`python` 正常 | Android 内核 `CONFIG_ANDROID_PARANOID_NETWORK`：AF_INET/raw socket 只放行 GID 3003(`inet`)/3004(`net_raw`) 的进程；root 的 CAP_NET_RAW 能建 socket，但 ping 主动丢 cap 后就被拒 | `/data/debian/etc/group` 加 `inet:x:3003:root`、`net_raw:x:3004:root`，**重新登录**（新 SSH 会话）后 `id` 应含 3003/3004；`install.sh` 已自动处理 |
+| chroot 里 `ping` 报 `socket: 权限不够`、域名解析 `暂时性错误`，但 `curl`/`python` 正常 | Android 内核 `CONFIG_ANDROID_PARANOID_NETWORK`：AF_INET/raw socket 只放行 GID 3003(`inet`)/3004(`net_raw`) 的进程；root 的 CAP_NET_RAW 能建 socket，但 ping 主动丢 cap 后就被拒 | `/data/debian/etc/group` 加 `inet:x:3003:root`、`net_raw:x:3004:root`，**重新登录**（新 SSH 会话）后 `id` 应含 3003/3004；`chroot-services` 已用 `su - root` 启动 supervisord，服务会继承 |
+| `supervisord` 的 `Groups` 为空，服务里 `ping` 仍报权限 | 直接 `chroot` 启动会继承 Android root 的空补充组 | 用 `su - root` 启动；`chroot-services` 已改为 `su - root`，重启后 `grep ^Groups /proc/$(cat /data/debian/run/supervisord.pid)/status` 应为 `0 3003 3004` |
 | `apt-get update` 报 `Temporary failure resolving ...`，但 root `ping baidu.com` 正常 | apt 下载进程以 `_apt` 运行（GID 65534），没有 `inet` 组，建 AF_INET socket 被内核拒绝 | `_apt` 的 GID 改成 3003，或 `echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99sandbox`；`install.sh` 已自动处理 |
 | `ping localhost` / `ping 127.0.0.1` 100% loss，但 `ping 网关`、TCP 回环正常 | Android 系统本身对回环 ICMP 的处理（`adb shell ping 127.0.0.1` 同样丢包），与 chroot/DNS 无关 | 用 `ping 192.168.31.1`、`ping baidu.com` 或 TCP（`bash -c 'echo >/dev/tcp/127.0.0.1/<端口>'`）验证连通性 |
 | 不想开 adb 5555 | `adb-tcp` 模块默认开启 | `touch /data/adb/modules/adb-tcp/disable` 后重启 |

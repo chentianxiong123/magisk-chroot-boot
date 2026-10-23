@@ -5,7 +5,7 @@
 
 - `chroot-mount`：等开机完成，挂 `proc/sys/dev/devpts`，准备 tmpfs 和运行目录
 - `chroot-network`：等开机完成，用当前网络的 DNS 写 `/etc/resolv.conf`（网关/公网兜底）
-- `chroot-services`：用 `setsid` 脱离 Magisk 进程组启动 supervisord
+- `chroot-services`：用 `setsid` 脱离 Magisk 进程组，并以 `su - root` 启动 supervisord（服务继承 `inet`/`net_raw`）
 - `adb-tcp`：可选，开机后开启 adb over TCP（5555），与 chroot 完全独立
 
 supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和日志轮转；模块只做挂载、网络和引导，
@@ -42,14 +42,16 @@ Android 开机
       │
       ├─ chroot-services
       │    ├─ 等 boot_completed 且 /data/debian/proc/version
-      │    └─ setsid chroot → supervisord
+      │    └─ setsid chroot → su - root → supervisord
       │
       └─ adb-tcp（可选，独立模块）
            └─ setprop service.adb.tcp.port 5555 + stop/start adbd
 ```
 
 `setsid` 是关键：Magisk 在模块 `service.sh` 退出时会清理该进程组，普通 `nohup &`
-会被一起杀掉。
+会被一起杀掉。`su - root` 让 supervisord 读取 chroot 的 `/etc/passwd`/`/etc/group`，
+从而带上 `inet(3003)`/`net_raw(3004)`；否则 Android root 的补充组为空，服务内
+`ping`/raw socket 会被内核拒绝。
 
 ## 环境要求
 
@@ -75,9 +77,11 @@ Android 内核启用了 `CONFIG_ANDROID_PARANOID_NETWORK`：**即使 root**，AF
 - `_apt` 的 GID 改为 3003
 - 写 `/etc/apt/apt.conf.d/99sandbox`（`APT::Sandbox::User "root";`）
 - 开机时由 `chroot-network` 写 `resolv.conf`（等 `net.dns1`，兜底默认网关 / `223.5.5.5`）
+- `chroot-services` 用 `su - root` 启动 supervisord，所有服务继承 `inet`/`net_raw`；SSH 会话由 `initgroups` 继承
 
-> 改组后需要**新开 SSH 会话**（或 `su - root`）才生效。`ping localhost` / `127.0.0.1`
-> 100% loss 是 Android 系统本身的行为（系统自带 ping 也一样），不是 DNS 问题；回环请用 TCP 验证。
+> 改完组后 SSH 需**重新登录**；直接 `chroot` 调试进程仍继承 Android 的 gid 0（没有 3003/3004），
+> 请用 `su - root`。`ping localhost` / `127.0.0.1` 100% loss 是 Android 系统本身的行为
+> （系统自带 ping 也一样），不是 DNS 问题；回环请用 TCP 验证。
 
 详细排查见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 

@@ -41,6 +41,13 @@ $CTL start all
 $CTL tail -f <name>
 ```
 
+确认 supervisord 继承了 Android 网络组（服务会继承）：
+
+```bash
+grep ^Groups /proc/$(cat /data/debian/run/supervisord.pid)/status
+# 期望：Groups: 0 3003 3004
+```
+
 ## 加一个新服务
 
 1. 参考 `templates/service.conf.example`，把配置加到：

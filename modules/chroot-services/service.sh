@@ -9,7 +9,10 @@ log "Starting supervisord..."
 n=0
 while [ $n -lt 3 ]; do
   n=$((n+1))
-  setsid $D/bin/busybox chroot $D /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+  # su - root applies the chroot's /etc/group (inet 3003 / net_raw 3004)
+  # so supervisord and every service inherit network permission. A plain
+  # chroot would keep Android root's empty supplementary groups.
+  setsid $D/bin/busybox chroot $D /bin/su -s /bin/sh - root -c "exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"
   sleep 4
   if $D/bin/busybox chroot $D /usr/bin/supervisorctl -c /etc/supervisor/supervisord.conf pid >/dev/null 2>&1; then
     log "Supervisord up (attempt $n)"
