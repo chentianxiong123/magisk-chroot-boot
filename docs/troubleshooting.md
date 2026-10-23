@@ -18,6 +18,7 @@
 | 端口被旧进程占着，supervisor 拉不起来 | 手动启动过、或老的 nohup 进程还在 | `pkill -f <进程名>`，或先 `supervisorctl stop all` 再清残留 |
 | 改了配置不生效 | supervisor 没重载 | `supervisorctl reread && supervisorctl update`，单个服务用 `restart <name>` |
 | 开机后 adb 断了 | `adb-tcp` 模块重启了 adbd | 等 10~20 秒；USB 直连兜底 |
+| chroot 里 `ping` 报 `socket: 权限不够`、域名解析 `暂时性错误`，但 `curl`/`python` 正常 | Android 内核 `CONFIG_ANDROID_PARANOID_NETWORK`：AF_INET/raw socket 只放行 GID 3003(`inet`)/3004(`net_raw`) 的进程；root 的 CAP_NET_RAW 能建 socket，但 ping 主动丢 cap 后就被拒 | `/data/debian/etc/group` 加 `inet:x:3003:root`、`net_raw:x:3004:root`，**重新登录**（新 SSH 会话）后 `id` 应含 3003/3004；`install.sh` 已自动处理 |
 | 不想开 adb 5555 | `adb-tcp` 模块默认开启 | `touch /data/adb/modules/adb-tcp/disable` 后重启 |
 | 想确认模块是否被 Magisk 加载 | 模块目录缺 `service.sh` 执行位或权限不对 | `ls -l /data/adb/modules/*/service.sh` 应为 755 root:root |
 | `install.sh` 推送后解包失败 | Android 自带 tar 不支持 gzip | 脚本已改用 `/data/adb/magisk/busybox tar xzf` |

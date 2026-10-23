@@ -22,6 +22,32 @@ if [ -f "$W/supervisor/chroot.conf" ]; then
   chown root:root /data/debian/etc/supervisor/conf.d/chroot.conf
 fi
 
+# Android 内核 CONFIG_ANDROID_PARANOID_NETWORK 只放行 GID 3003(inet) /
+# 3004(net_raw) 的进程；只靠 root 不够，ping 等丢 cap 的 raw socket 会被拒。
+G=/data/debian/etc/group
+if [ -f "$G" ]; then
+  cp -f "$G" "$G.bak.$(date +%s)" 2>/dev/null || true
+  /data/adb/magisk/busybox awk -F: -v OFS=: '
+    $1 == "inet" {
+      if ($4 !~ /(^|,)root(,|$)/) $4 = ($4 == "" ? "root" : $4 ",root")
+      ok_inet = 1
+    }
+    $1 == "net_raw" {
+      if ($4 !~ /(^|,)root(,|$)/) $4 = ($4 == "" ? "root" : $4 ",root")
+      ok_raw = 1
+    }
+    { print }
+    END {
+      if (!ok_inet) print "inet:x:3003:root"
+      if (!ok_raw) print "net_raw:x:3004:root"
+    }
+  ' "$G" > "$G.tmp" && mv -f "$G.tmp" "$G"
+  chown root:root "$G"
+  chmod 644 "$G"
+  echo "android network groups:"
+  grep -E '^(inet|net_raw):' "$G"
+fi
+
 restorecon -R /data/adb/modules 2>/dev/null || true
 rm -rf "$W" "$T"
 
