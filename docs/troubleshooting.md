@@ -19,6 +19,8 @@
 | 改了配置不生效 | supervisor 没重载 | `supervisorctl reread && supervisorctl update`，单个服务用 `restart <name>` |
 | 开机后 adb 断了 | `adb-tcp` 模块重启了 adbd | 等 10~20 秒；USB 直连兜底 |
 | chroot 里 `ping` 报 `socket: 权限不够`、域名解析 `暂时性错误`，但 `curl`/`python` 正常 | Android 内核 `CONFIG_ANDROID_PARANOID_NETWORK`：AF_INET/raw socket 只放行 GID 3003(`inet`)/3004(`net_raw`) 的进程；root 的 CAP_NET_RAW 能建 socket，但 ping 主动丢 cap 后就被拒 | `/data/debian/etc/group` 加 `inet:x:3003:root`、`net_raw:x:3004:root`，**重新登录**（新 SSH 会话）后 `id` 应含 3003/3004；`install.sh` 已自动处理 |
+| `apt-get update` 报 `Temporary failure resolving ...`，但 root `ping baidu.com` 正常 | apt 下载进程以 `_apt` 运行（GID 65534），没有 `inet` 组，建 AF_INET socket 被内核拒绝 | `_apt` 的 GID 改成 3003，或 `echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99sandbox`；`install.sh` 已自动处理 |
+| `ping localhost` / `ping 127.0.0.1` 100% loss，但 `ping 网关`、TCP 回环正常 | Android 系统本身对回环 ICMP 的处理（`adb shell ping 127.0.0.1` 同样丢包），与 chroot/DNS 无关 | 用 `ping 192.168.31.1`、`ping baidu.com` 或 TCP（`bash -c 'echo >/dev/tcp/127.0.0.1/<端口>'`）验证连通性 |
 | 不想开 adb 5555 | `adb-tcp` 模块默认开启 | `touch /data/adb/modules/adb-tcp/disable` 后重启 |
 | 想确认模块是否被 Magisk 加载 | 模块目录缺 `service.sh` 执行位或权限不对 | `ls -l /data/adb/modules/*/service.sh` 应为 755 root:root |
 | `install.sh` 推送后解包失败 | Android 自带 tar 不支持 gzip | 脚本已改用 `/data/adb/magisk/busybox tar xzf` |

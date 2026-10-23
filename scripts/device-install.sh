@@ -48,6 +48,20 @@ if [ -f "$G" ]; then
   grep -E '^(inet|net_raw):' "$G"
 fi
 
+# apt 的下载进程以 _apt 运行；GID 65534 没有 inet 组，会报 DNS 解析失败。
+P=/data/debian/etc/passwd
+if [ -f "$P" ]; then
+  grep -q '^_apt:x:42:3003:' "$P" || sed -i 's/^_apt:x:42:65534:/_apt:x:42:3003:/' "$P"
+  chown root:root "$P"
+  chmod 644 "$P"
+fi
+if [ -d /data/debian/etc/apt ]; then
+  mkdir -p /data/debian/etc/apt/apt.conf.d
+  [ -f /data/debian/etc/apt/apt.conf.d/99sandbox ] || \
+    echo 'APT::Sandbox::User "root";' > /data/debian/etc/apt/apt.conf.d/99sandbox
+  chmod 644 /data/debian/etc/apt/apt.conf.d/99sandbox
+fi
+
 restorecon -R /data/adb/modules 2>/dev/null || true
 rm -rf "$W" "$T"
 
