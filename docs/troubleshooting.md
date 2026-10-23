@@ -22,6 +22,7 @@
 | 想确认模块是否被 Magisk 加载 | 模块目录缺 `service.sh` 执行位或权限不对 | `ls -l /data/adb/modules/*/service.sh` 应为 755 root:root |
 | `install.sh` 推送后解包失败 | Android 自带 tar 不支持 gzip | 脚本已改用 `/data/adb/magisk/busybox tar xzf` |
 | 开机后服务全没起，但模块已启用 | 等开机完成超时 / `/data/debian` 未挂载 | 看 `/data/local/tmp/services.log`；确认 `/data/debian/proc/version` 可读 |
+| 重启后 chroot 里域名解析失败（`ping: bad address`） | 开机时 WiFi/DHCP 还没完成，`getprop net.dns1` 为空，`resolv.conf` 被写成空 | 模块已改为先等 `net.dns1`，再以默认网关/`223.5.5.5` 兜底；手动修：`printf 'nameserver <网关>\n' > /data/debian/etc/resolv.conf` |
 | Magisk app 里看不到模块 | v23 的模块列表来自目录扫描，app 缓存可能没刷新 | 重启 app / 重启设备；不影响实际执行 |
 
 ## 快速定位三步
