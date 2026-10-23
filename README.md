@@ -13,6 +13,7 @@ supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和�
 ## 特性
 
 - 开机全自动，无需 init.d、Tasker 或额外 app
+- 自动处理 Android chroot 网络权限（`inet`/`net_raw`、`_apt`、开机 DNS）
 - adb over TCP 独立成模块，可单独启用/删除，不影响 chroot
 - `kill -9` 后由 supervisor 自动拉起
 - 模块职责单一，服务定义集中在一个 supervisor conf
@@ -53,6 +54,26 @@ Android 开机
 | chroot | Debian 位于 `/data/debian` |
 | 主机 | Linux，`adb` 可用，设备已授权 |
 | 设备内 | `supervisor` 已安装（`apt install supervisor`） |
+
+## Android 网络权限（重要）
+
+Android 内核启用了 `CONFIG_ANDROID_PARANOID_NETWORK`：**即使 root**，AF_INET/raw socket
+也只放行 GID `3003(inet)` / `3004(net_raw)` 的进程。典型症状：
+
+- chroot 里 `ping` 报 `socket: 权限不够`，或能 ping IP 但不能解析域名
+- `apt-get update` 报 `Temporary failure resolving ...`（apt 下载进程以 `_apt` 运行，GID 65534）
+
+`install.sh` 部署时会自动处理：
+
+- `/data/debian/etc/group` 补 `inet:x:3003:root`、`net_raw:x:3004:root`
+- `_apt` 的 GID 改为 3003
+- 写 `/etc/apt/apt.conf.d/99sandbox`（`APT::Sandbox::User "root";`）
+- 开机时由 `chroot-mount` 写 `resolv.conf`（等 `net.dns1`，兜底默认网关 / `223.5.5.5`）
+
+> 改组后需要**新开 SSH 会话**（或 `su - root`）才生效。`ping localhost` / `127.0.0.1`
+> 100% loss 是 Android 系统本身的行为（系统自带 ping 也一样），不是 DNS 问题；回环请用 TCP 验证。
+
+详细排查见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
 ## 快速开始
 
