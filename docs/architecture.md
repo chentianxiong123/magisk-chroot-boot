@@ -13,8 +13,11 @@ Android 开机
          │    ├─ 重建 /dev/ptmx（root:root 666）
          │    ├─ devpts remount gid=5,mode=620
          │    ├─ tmpfs：/tmp、/var/log(64M)、apt lists/cache(128M)
-         │    ├─ mkdir /run/sshd、/var/log/supervisor
-         │    └─ 写 /etc/resolv.conf
+         │    └─ mkdir /run/sshd、/var/log/supervisor
+         │
+         ├─ chroot-network
+         │    ├─ 等 boot_completed，并等 net.dns1（最多 30s）
+         │    └─ 写 /etc/resolv.conf（DNS → 默认网关 → 223.5.5.5）
          │
          ├─ chroot-services
          │    ├─ 等 boot_completed 且 /data/debian/proc/version
@@ -33,7 +36,7 @@ supervisord 必须脱离出去才能长期存活。
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| Magisk 模块 | 挂载、tmpfs、目录准备、拉起 supervisord；adb 由独立模块负责 | 业务进程的启停/重启/日志 |
+| Magisk 模块 | 挂载、tmpfs、DNS、目录准备、拉起 supervisord；adb 由独立模块负责 | 业务进程的启停/重启/日志 |
 | supervisord | 服务启动顺序、崩溃重拉、日志轮转、统一启停 | 文件系统挂载、adb |
 
 这样划分的好处：加服务只改 supervisor 配置；模块保持极简，出错面小。
@@ -71,6 +74,7 @@ redirect_stderr=true
 | 路径（Android） | chroot 内 | 作用 |
 |---|---|---|
 | `/data/adb/modules/chroot-mount` | — | 挂载模块 |
+| `/data/adb/modules/chroot-network` | — | 网络模块（开机 DNS） |
 | `/data/adb/modules/chroot-services` | — | 引导模块 |
 | `/data/adb/modules/adb-tcp` | — | 可选：adb over TCP 模块 |
 | `/data/debian` | `/` | Debian 根 |
@@ -80,8 +84,9 @@ redirect_stderr=true
 | `/data/debian/tmp` | `/tmp` | tmpfs |
 | `/data/debian/var/lib/apt/lists` | — | tmpfs 128M |
 | `/data/debian/var/cache/apt` | — | tmpfs 128M |
-| `/data/local/tmp/chroot-mount.log` | — | 模块 1 日志（跨重启保留） |
-| `/data/local/tmp/services.log` | — | 模块 2 日志（跨重启保留） |
+| `/data/local/tmp/chroot-mount.log` | — | 挂载模块日志（跨重启保留） |
+| `/data/local/tmp/chroot-network.log` | — | DNS 模块日志（跨重启保留） |
+| `/data/local/tmp/services.log` | — | supervisord 引导模块日志（跨重启保留） |
 
 `/var/log`、`/tmp` 是内存盘，**重启即清空**，这是有意设计（保护闪存）。
 需要长期日志就把对应 mount 去掉或改挂到持久目录。

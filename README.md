@@ -1,19 +1,21 @@
 # magisk-chroot-boot
 
-用两个 Magisk 模块，让 Android 开机后自动挂载 Debian chroot，并拉起
+用三个核心 Magisk 模块（外加可选的 `adb-tcp`），让 Android 开机后自动挂载 Debian chroot，并拉起
 [supervisord](http://supervisord.org/) 托管 chroot 内的服务。
 
 - `chroot-mount`：等开机完成，挂 `proc/sys/dev/devpts`，准备 tmpfs 和运行目录
+- `chroot-network`：等开机完成，用当前网络的 DNS 写 `/etc/resolv.conf`（网关/公网兜底）
 - `chroot-services`：用 `setsid` 脱离 Magisk 进程组启动 supervisord
 - `adb-tcp`：可选，开机后开启 adb over TCP（5555），与 chroot 完全独立
 
-supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和日志轮转；模块只做挂载和引导，
+supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和日志轮转；模块只做挂载、网络和引导，
 所以增删服务不需要改模块。
 
 ## 特性
 
 - 开机全自动，无需 init.d、Tasker 或额外 app
 - 自动处理 Android chroot 网络权限（`inet`/`net_raw`、`_apt`、开机 DNS）
+- DNS 独立成模块（`chroot-network`），可单独禁用
 - adb over TCP 独立成模块，可单独启用/删除，不影响 chroot
 - `kill -9` 后由 supervisor 自动拉起
 - 模块职责单一，服务定义集中在一个 supervisor conf
@@ -32,7 +34,11 @@ Android 开机
       │    ├─ mount proc / sys / dev / devpts
       │    ├─ 重建 /dev/ptmx
       │    ├─ tmpfs：/tmp、/var/log、apt lists/cache
-      │    └─ 建 /run/sshd、/var/log/supervisor，写 resolv.conf
+      │    └─ 建 /run/sshd、/var/log/supervisor
+      │
+      ├─ chroot-network
+      │    ├─ 等 boot_completed，并等 net.dns1（最多 30s）
+      │    └─ 写 /etc/resolv.conf（DNS → 网关 → 223.5.5.5）
       │
       ├─ chroot-services
       │    ├─ 等 boot_completed 且 /data/debian/proc/version
@@ -68,7 +74,7 @@ Android 内核启用了 `CONFIG_ANDROID_PARANOID_NETWORK`：**即使 root**，AF
 - `/data/debian/etc/group` 补 `inet:x:3003:root`、`net_raw:x:3004:root`
 - `_apt` 的 GID 改为 3003
 - 写 `/etc/apt/apt.conf.d/99sandbox`（`APT::Sandbox::User "root";`）
-- 开机时由 `chroot-mount` 写 `resolv.conf`（等 `net.dns1`，兜底默认网关 / `223.5.5.5`）
+- 开机时由 `chroot-network` 写 `resolv.conf`（等 `net.dns1`，兜底默认网关 / `223.5.5.5`）
 
 > 改组后需要**新开 SSH 会话**（或 `su - root`）才生效。`ping localhost` / `127.0.0.1`
 > 100% loss 是 Android 系统本身的行为（系统自带 ping 也一样），不是 DNS 问题；回环请用 TCP 验证。
@@ -132,6 +138,7 @@ $CTL stop all
 ├── build.sh                       # 生成 dist/*.zip
 ├── modules/
 │   ├── chroot-mount/              # 挂载模块
+│   ├── chroot-network/            # 开机 DNS（resolv.conf）模块
 │   ├── chroot-services/           # supervisord 引导模块
 │   └── adb-tcp/                   # 可选：adb over TCP
 ├── meta/META-INF/                 # Magisk 安装器模板

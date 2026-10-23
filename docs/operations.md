@@ -15,6 +15,7 @@ sleep 80
 
 前提：设备已 root（`su -c id` 返回 uid=0）、`/data/debian` 存在、chroot 内已装 supervisor。
 不需要 adb TCP 时，安装后禁用 `adb-tcp` 模块即可。
+不需要开机自动写 DNS 时，禁用 `chroot-network` 模块即可（自己维护 `/etc/resolv.conf`）。
 
 不提供 `config/services.conf` 时，`install.sh` 会安装 `supervisor/chroot.conf.tpl`
 里的示例；设备上已有配置则不会覆盖。
@@ -106,7 +107,7 @@ adb reboot
 ## 卸载
 
 ```bash
-./uninstall.sh            # 停 supervisord + 删两个模块
+./uninstall.sh            # 停 supervisord + 删模块（含可选的 adb-tcp）
 ./uninstall.sh --purge    # 额外删除 supervisor 配置
 ```
 

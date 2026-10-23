@@ -1,0 +1,6 @@
+id=chroot-network
+name=Chroot Network (resolv.conf)
+version=1.0.0
+versionCode=1
+author=chentianxiong123
+description=Write /data/debian/etc/resolv.conf after boot using the active network DNS, with gateway/public fallback
