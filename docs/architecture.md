@@ -17,12 +17,17 @@ Android 开机
          │
          ├─ chroot-network
          │    ├─ 等 boot_completed，并等 net.dns1（最多 30s）
-         │    └─ 写 /etc/resolv.conf（DNS → 默认网关 → 223.5.5.5）
+         │    ├─ 写 /etc/resolv.conf（DNS → 默认网关 → 223.5.5.5）
+         │    └─ 可选：按 /data/adb/chroot-routes.conf 一次性加 ip rule（5s 后重试一次）
          │
          ├─ chroot-services
          │    ├─ 等 boot_completed 且 /data/debian/proc/version
          │    ├─ setsid chroot → su - root → supervisord -c /etc/supervisor/supervisord.conf
          │    └─ 轮询 supervisorctl pid，最多 3 次
+         │
+         ├─ chroot-netfix（可选，独立模块）
+         │    ├─ 等 boot_completed
+         │    └─ setsid watchdog：按 /data/adb/chroot-netfix.conf 加 ip rule / iptables，每 10s 重加
          │
          └─ adb-tcp（可选，独立模块）
               ├─ 等 boot_completed
@@ -39,7 +44,7 @@ supervisord 必须脱离出去才能长期存活。`su - root` 让 supervisord �
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| Magisk 模块 | 挂载、tmpfs、DNS、目录准备、拉起 supervisord；adb 由独立模块负责 | 业务进程的启停/重启/日志 |
+| Magisk 模块 | 挂载、tmpfs、DNS、目录准备、拉起 supervisord；adb/netfix 由独立模块负责 | 业务进程的启停/重启/日志 |
 | supervisord | 服务启动顺序、崩溃重拉、日志轮转、统一启停 | 文件系统挂载、adb |
 
 这样划分的好处：加服务只改 supervisor 配置；模块保持极简，出错面小。
@@ -77,8 +82,15 @@ redirect_stderr=true
 | 路径（Android） | chroot 内 | 作用 |
 |---|---|---|
 | `/data/adb/modules/chroot-mount` | — | 挂载模块 |
-| `/data/adb/modules/chroot-network` | — | 网络模块（开机 DNS） |
+| `/data/adb/modules/chroot-network` | — | 网络模块（开机 DNS + 一次性策略路由） |
 | `/data/adb/modules/chroot-services` | — | 引导模块 |
+| `/data/adb/modules/chroot-netfix` | — | 可选：watchdog 策略路由 + ICMP 修复模块 |
+| `/data/adb/modules/static-ip` | — | 可选：开机把 DHCP 地址替换成固定 IP |
+| `/data/adb/modules/postboot-tune` | — | 可选：开机后 stop / freeze 名单 |
+| `/data/adb/chroot-routes.conf` | — | 一次性策略路由配置（CIDR、优先级） |
+| `/data/adb/chroot-netfix.conf` | — | netfix 配置（CIDR、优先级、ICMP 开关） |
+| `/data/adb/static-ip.conf` | — | 固定 IP 配置（地址、掩码、网卡） |
+| `/data/adb/postboot-tune.conf` | — | stop / freeze 名单与等待时间 |
 | `/data/adb/modules/adb-tcp` | — | 可选：adb over TCP 模块 |
 | `/data/debian` | `/` | Debian 根 |
 | `/data/debian/etc/supervisor/conf.d/chroot.conf` | `/etc/supervisor/conf.d/chroot.conf` | 服务定义 |
@@ -89,6 +101,7 @@ redirect_stderr=true
 | `/data/debian/var/cache/apt` | — | tmpfs 128M |
 | `/data/local/tmp/chroot-mount.log` | — | 挂载模块日志（跨重启保留） |
 | `/data/local/tmp/chroot-network.log` | — | DNS 模块日志（跨重启保留） |
+| `/data/local/tmp/chroot-netfix.log` | — | 策略路由/ICMP 修复日志（跨重启保留） |
 | `/data/local/tmp/services.log` | — | supervisord 引导模块日志（跨重启保留） |
 
 `/var/log`、`/tmp` 是内存盘，**重启即清空**，这是有意设计（保护闪存）。
@@ -104,3 +117,4 @@ redirect_stderr=true
 | 单个服务崩溃 | 只有该服务受影响，supervisor 自动重拉 | 自动 |
 | `/data/debian` 丢失 | 挂载与所有服务失败 | 恢复 chroot |
 | adb 5555 被占用/关闭 | 远程 adb 断 | USB 直连或重启 adbd |
+| netfix 规则被 netd/ROM 清掉 | TUN 回包走错接口，TCP/ping 不通 | watchdog 10s 内重加；看 `/data/local/tmp/chroot-netfix.log` |

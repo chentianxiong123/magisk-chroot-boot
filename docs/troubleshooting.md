@@ -18,10 +18,17 @@
 | 端口被旧进程占着，supervisor 拉不起来 | 手动启动过、或老的 nohup 进程还在 | `pkill -f <进程名>`，或先 `supervisorctl stop all` 再清残留 |
 | 改了配置不生效 | supervisor 没重载 | `supervisorctl reread && supervisorctl update`，单个服务用 `restart <name>` |
 | 开机后 adb 断了 | `adb-tcp` 模块重启了 adbd | 等 10~20 秒；USB 直连兜底 |
+| chroot 里 TUN（EasyTier/WireGuard 等）能进，但 TCP 服务不通 / 回包走 wlan0 | Android netd 策略路由：TUN 路由只在 `main` 表，普通流量先查 wlan0/rmnet 表 | 固定网络：`chroot-network` 配 `config/routes.conf`；切网/Doze/ICMP：`chroot-netfix` 配 `config/netfix.conf`；手动 `ip rule add to <CIDR> lookup main pref 9000` |
+| 设备 ping 100% loss，但 TCP 正常；`/proc/net/snmp` 的 `OutEchoReps` 在涨 | ROM 省电/Doze 防火墙 `fw_powersave`/`fw_dozable` 按 `--uid-owner` 放行，最后 `DROP`；内核 ICMP echo reply 没有 socket owner | `chroot-netfix` 设 `ICMP_ECHO_REPLY=1`；手动 `iptables -I fw_OUTPUT 1 -p icmp --icmp-type echo-reply -j RETURN` |
+| netfix 规则重启/切网后丢 | netd/ROM 清 `ip rule` 或 iptables | `chroot-netfix` watchdog 每 10s 重加；看 `/data/local/tmp/chroot-netfix.log` |
+| 开机卡在第二屏，`logcat` 里 `No home screen found`，`user 0` 一直 `BOOTING` | 禁用了 `com.android.settings`；开机兜底桌面 `FallbackHome` 在这个包里，AMS 找不到 home 就卡住 | `pm enable --user 0 com.android.settings`（其它包可禁，这个别禁），等 PM 写盘后重启 |
+| 静态 IP 重启后变回 DHCP | `static-ip` 是一次性模块；WiFi 重连或框架重启会重新跑 DHCP | 重启，或手动 `sh /data/adb/modules/static-ip/service.sh`；看 `/data/local/tmp/static-ip.log` |
+| 冻结的进程过一会儿自己动了 | 被 LMK 杀掉后由系统重新拉起，新进程没有 `T` 状态 | 重新 `kill -STOP`；模块不补冻（无 watchdog） |
+| `pm disable` 了但进程还在跑（如 `com.android.phone`、`com.meizu.alphame`） | persistent 应用由系统直接拉起，禁用不阻止启动 | 只能 `kill -STOP` 冻结（有拖死 system_server 的风险），或不管它 |
 | chroot 里 `ping` 报 `socket: 权限不够`、域名解析 `暂时性错误`，但 `curl`/`python` 正常 | Android 内核 `CONFIG_ANDROID_PARANOID_NETWORK`：AF_INET/raw socket 只放行 GID 3003(`inet`)/3004(`net_raw`) 的进程；root 的 CAP_NET_RAW 能建 socket，但 ping 主动丢 cap 后就被拒 | `/data/debian/etc/group` 加 `inet:x:3003:root`、`net_raw:x:3004:root`，**重新登录**（新 SSH 会话）后 `id` 应含 3003/3004；`chroot-services` 已用 `su - root` 启动 supervisord，服务会继承 |
 | `supervisord` 的 `Groups` 为空，服务里 `ping` 仍报权限 | 直接 `chroot` 启动会继承 Android root 的空补充组 | 用 `su - root` 启动；`chroot-services` 已改为 `su - root`，重启后 `grep ^Groups /proc/$(cat /data/debian/run/supervisord.pid)/status` 应为 `0 3003 3004` |
 | `apt-get update` 报 `Temporary failure resolving ...`，但 root `ping baidu.com` 正常 | apt 下载进程以 `_apt` 运行（GID 65534），没有 `inet` 组，建 AF_INET socket 被内核拒绝 | `_apt` 的 GID 改成 3003，或 `echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99sandbox`；`install.sh` 已自动处理 |
-| `ping localhost` / `ping 127.0.0.1` 100% loss，但 `ping 网关`、TCP 回环正常 | Android 系统本身对回环 ICMP 的处理（`adb shell ping 127.0.0.1` 同样丢包），与 chroot/DNS 无关 | 用 `ping 192.168.31.1`、`ping baidu.com` 或 TCP（`bash -c 'echo >/dev/tcp/127.0.0.1/<端口>'`）验证连通性 |
+| `ping localhost` / `ping 127.0.0.1` 100% loss，但 `ping 网关`、TCP 回环正常 | Android 系统本身对回环 ICMP 的处理（`adb shell ping 127.0.0.1` 同样丢包），与 chroot/DNS 无关 | 用 `ping <网关IP>`、`ping baidu.com` 或 TCP（`bash -c 'echo >/dev/tcp/127.0.0.1/<端口>'`）验证连通性 |
 | 不想开 adb 5555 | `adb-tcp` 模块默认开启 | `touch /data/adb/modules/adb-tcp/disable` 后重启 |
 | 想确认模块是否被 Magisk 加载 | 模块目录缺 `service.sh` 执行位或权限不对 | `ls -l /data/adb/modules/*/service.sh` 应为 755 root:root |
 | `install.sh` 推送后解包失败 | Android 自带 tar 不支持 gzip | 脚本已改用 `/data/adb/magisk/busybox tar xzf` |
@@ -36,7 +43,7 @@
 adb shell 'su -c "/data/adb/magisk/magisk64 -V"'
 
 # 2. 模块跑了吗
-adb shell 'su -c "cat /data/local/tmp/chroot-mount.log; tail -20 /data/local/tmp/services.log"'
+adb shell 'su -c "cat /data/local/tmp/chroot-mount.log; tail -20 /data/local/tmp/chroot-network.log; tail -20 /data/local/tmp/services.log; tail -20 /data/local/tmp/chroot-netfix.log"'
 
 # 3. 服务状态与端口
 ./scripts/status.sh
@@ -49,7 +56,9 @@ PORTS="22 8080" ./scripts/healthcheck.sh
 |---|---|---|
 | 模块 1 | `/data/local/tmp/chroot-mount.log` | 挂载过程，跨重启保留 |
 | 模块 2 | `/data/local/tmp/services.log` | supervisord 启动/重试，跨重启保留 |
+| network 模块 | `/data/local/tmp/chroot-network.log` | DNS + 一次性策略路由，跨重启保留 |
 | adb 模块 | `/data/local/tmp/adb-tcp.log` | adb TCP 开启记录 |
+| netfix 模块 | `/data/local/tmp/chroot-netfix.log` | ip rule / ICMP 规则重加记录 |
 | supervisord | `/data/debian/var/log/supervisor/supervisord.log` | 重启清空 |
 | 各服务 | `/data/debian/var/log/supervisor/<name>.log` | 重启清空 |
 | Magisk | `/cache/magisk.log` | magiskd 自己的日志 |

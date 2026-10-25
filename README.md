@@ -1,12 +1,15 @@
 # magisk-chroot-boot
 
-用三个核心 Magisk 模块（外加可选的 `adb-tcp`），让 Android 开机后自动挂载 Debian chroot，并拉起
+用三个核心 Magisk 模块（外加可选的 `adb-tcp`、`chroot-netfix`、`static-ip`、`postboot-tune`），让 Android 开机后自动挂载 Debian chroot，并拉起
 [supervisord](http://supervisord.org/) 托管 chroot 内的服务。
 
 - `chroot-mount`：等开机完成，挂 `proc/sys/dev/devpts`，准备 tmpfs 和运行目录
-- `chroot-network`：等开机完成，用当前网络的 DNS 写 `/etc/resolv.conf`（网关/公网兜底）
+- `chroot-network`：等开机完成，用当前网络的 DNS 写 `/etc/resolv.conf`（网关/公网兜底）；可选按 `config/routes.conf` 一次性加 `ip rule`
 - `chroot-services`：用 `setsid` 脱离 Magisk 进程组，并以 `su - root` 启动 supervisord（服务继承 `inet`/`net_raw`）
 - `adb-tcp`：可选，开机后开启 adb over TCP（5555），与 chroot 完全独立
+- `chroot-netfix`：可选，watchdog 版策略路由 + 放行内核 ICMP echo reply（chroot raw TUN 场景）
+- `static-ip`：可选，开机后把 DHCP 地址换成固定 IP（一次性，无 watchdog）
+- `postboot-tune`：可选，开机稳定后 force-stop 按需应用、SIGSTOP 指定常驻进程（一次性，无 watchdog）
 
 supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和日志轮转；模块只做挂载、网络和引导，
 所以增删服务不需要改模块。
@@ -16,7 +19,11 @@ supervisord 负责服务本身的启动顺序、崩溃重拉、统一启停和�
 - 开机全自动，无需 init.d、Tasker 或额外 app
 - 自动处理 Android chroot 网络权限（`inet`/`net_raw`、`_apt`、开机 DNS）
 - DNS 独立成模块（`chroot-network`），可单独禁用
+- 固定网络可用 `chroot-network` 一次性加 `ip rule`，没有 watchdog 唤醒
 - adb over TCP 独立成模块，可单独启用/删除，不影响 chroot
+- `chroot-netfix` 可选，解决 raw TUN 回包走 wlan0/rmnet、ROM 省电防火墙丢 ICMP 的问题
+- `static-ip` 可选，开机一次性把 DHCP 地址替换成固定 IP，不跑 watchdog
+- `postboot-tune` 可选，开机后按名单清理内存（stop 按需应用 / 冻结常驻进程）
 - `kill -9` 后由 supervisor 自动拉起
 - 模块职责单一，服务定义集中在一个 supervisor conf
 - 幂等安装，可重复执行
@@ -38,11 +45,16 @@ Android 开机
       │
       ├─ chroot-network
       │    ├─ 等 boot_completed，并等 net.dns1（最多 30s）
-      │    └─ 写 /etc/resolv.conf（DNS → 网关 → 223.5.5.5）
+      │    ├─ 写 /etc/resolv.conf（DNS → 网关 → 223.5.5.5）
+      │    └─ 可选：按 /data/adb/chroot-routes.conf 一次性加 ip rule（5s 后重试一次）
       │
       ├─ chroot-services
       │    ├─ 等 boot_completed 且 /data/debian/proc/version
       │    └─ setsid chroot → su - root → supervisord
+      │
+      ├─ chroot-netfix（可选，独立模块）
+      │    ├─ 等 boot_completed
+      │    └─ setsid watchdog：ip rule + iptables ICMP echo-reply，每 10s 重加
       │
       └─ adb-tcp（可选，独立模块）
            └─ setprop service.adb.tcp.port 5555 + stop/start adbd
@@ -85,6 +97,45 @@ Android 内核启用了 `CONFIG_ANDROID_PARANOID_NETWORK`：**即使 root**，AF
 
 详细排查见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
+## chroot-netfix（可选）
+
+chroot 里的 raw TUN（EasyTier/WireGuard 等）路由只进 `main` 表，Android netd 会先把
+流量送到 `wlan0`/`rmnet` 表，导致回包走错接口。固定网络优先用 `chroot-network` 的
+一次性策略路由：
+
+- 配置 `config/routes.conf`（gitignored），示例见
+  `modules/chroot-network/routes.conf.example`
+- 开机加 `ip rule to <CIDR> lookup main pref 9000`，5s 后重试一次，之后不再轮询
+
+需要切网/Doze 后自动补规则，或者要修 ROM 省电防火墙丢 ICMP 的问题，才用
+`chroot-netfix`：
+
+- 10s watchdog 重加 `ip rule`
+- `iptables -I fw_OUTPUT 1 -p icmp --icmp-type echo-reply -j RETURN`
+- 配置 `config/netfix.conf`，示例见 `modules/chroot-netfix/netfix.conf.example`
+
+固定网络、ping 不重要时，建议只开 `chroot-network`，禁用 `chroot-netfix`。
+
+## static-ip（可选）
+
+Flyme 等 ROM 的 WLAN 设置界面可能不可用，无法在 GUI 里改静态 IP。本模块在开机后等
+DHCP 拿到地址，再加固定地址并删掉 DHCP 地址，系统不会继续用 DHCP 地址：
+
+- 配置 `config/static-ip.conf`（gitignored），示例见 `modules/static-ip/static-ip.conf.example`
+- 只执行一次；WiFi 断线重连或框架重启后需要重启，或手动再跑一次 `service.sh`
+- 用 `promote_secondaries=1` 保证删主地址时不会把固定地址一起删掉
+
+## postboot-tune（可选）
+
+开机稳定后按名单做两件事，都只执行一次：
+
+- `STOP_PKGS`：`am force-stop`，适合非 persistent 的按需应用（settings、downloads 等），杀掉不会自己回来
+- `FREEZE_PROCS`：`kill -STOP`，适合杀不掉的常驻进程；只停 CPU，**不释放内存**，`kill -CONT` 解冻
+- 会先等 `static-ip` 的地址出现，避免在 WiFi 还没连上时冻结 `wifiadmin`
+- 冻结状态在进程被杀/重启后失效，模块不会补冻（没有 watchdog）
+
+配置见 `modules/postboot-tune/postboot-tune.conf.example`，本地放 `config/postboot-tune.conf`。
+
 ## 快速开始
 
 ```bash
@@ -94,6 +145,22 @@ git clone <this-repo> && cd magisk-chroot-boot
 mkdir -p config
 cp templates/service.conf.example config/services.conf
 $EDITOR config/services.conf
+
+# 可选：raw TUN 固定网络，一次性 ip rule（不会被提交）
+cp modules/chroot-network/routes.conf.example config/routes.conf
+$EDITOR config/routes.conf
+
+# 可选：需要 watchdog 或 ICMP 修复时才用（不会被提交）
+cp modules/chroot-netfix/netfix.conf.example config/netfix.conf
+$EDITOR config/netfix.conf
+
+# 可选：固定 IP（不会被提交）
+cp modules/static-ip/static-ip.conf.example config/static-ip.conf
+$EDITOR config/static-ip.conf
+
+# 可选：开机后清理/冻结名单（不会被提交）
+cp modules/postboot-tune/postboot-tune.conf.example config/postboot-tune.conf
+$EDITOR config/postboot-tune.conf
 
 ./install.sh
 
@@ -106,12 +173,15 @@ sleep 80
 `install.sh` 的行为：
 
 1. 检查 adb、root、`/data/debian`；
-2. 把 `modules/*` 推到 `/data/adb/modules/`（含可选的 `adb-tcp`）；
+2. 把 `modules/*` 推到 `/data/adb/modules/`（含可选的 `adb-tcp`、`chroot-netfix`、`static-ip`、`postboot-tune`）；
 3. 服务配置按优先级选择：
    - 本地有 `config/services.conf` → 用它；
    - 设备上已有 `/data/debian/etc/supervisor/conf.d/chroot.conf` → 保留不动；
    - 都没有 → 安装 `supervisor/chroot.conf.tpl` 里的示例；
-4. 修权限并清理临时文件。
+4. `chroot-network` 路由配置按同样优先级推送到 `/data/adb/chroot-routes.conf`；
+5. `chroot-netfix` 配置按同样优先级推送到 `/data/adb/chroot-netfix.conf`；
+6. `static-ip` / `postboot-tune` 配置按同样优先级推送到 `/data/adb/*.conf`；
+7. 修权限、重启 netfix watchdog，并清理临时文件。
 
 ## 常用命令
 
@@ -144,6 +214,9 @@ $CTL stop all
 │   ├── chroot-mount/              # 挂载模块
 │   ├── chroot-network/            # 开机 DNS（resolv.conf）模块
 │   ├── chroot-services/           # supervisord 引导模块
+│   ├── chroot-netfix/             # 可选：策略路由 + ICMP 修复
+│   ├── static-ip/                 # 可选：开机替换成固定 IP
+│   ├── postboot-tune/             # 可选：开机后 stop / freeze 名单
 │   └── adb-tcp/                   # 可选：adb over TCP
 ├── meta/META-INF/                 # Magisk 安装器模板
 ├── supervisor/chroot.conf.tpl     # 示例服务配置
@@ -158,6 +231,7 @@ $CTL stop all
 - [docs/architecture.md](docs/architecture.md) — 启动链路、职责边界、路径
 - [docs/operations.md](docs/operations.md) — 加服务、升级、备份、回滚
 - [docs/troubleshooting.md](docs/troubleshooting.md) — 已知坑与排查表
+- [docs/case-2026-10-23-easytier-netfix.md](docs/case-2026-10-23-easytier-netfix.md) — 一次 raw TUN 路由/ICMP 排查案例
 - [docs/magisk-v23-repair.md](docs/magisk-v23-repair.md) — Magisk 安装残缺时的修复方法
 - [docs/legacy-autoboot.md](docs/legacy-autoboot.md) — 旧版 AutoBoot.apk 方案细节（已弃用）
 
