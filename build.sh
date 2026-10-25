@@ -13,7 +13,11 @@ for m in "$ROOT"/modules/*/; do
   work=$(mktemp -d)
   cp -a "$m." "$work/"
   cp -a "$ROOT/meta/META-INF" "$work/"
-  chmod 755 "$work/service.sh"
+  for f in service.sh watchdog.sh uninstall.sh; do
+    if [ -f "$work/$f" ]; then
+      chmod 755 "$work/$f"
+    fi
+  done
   (cd "$work" && zip -qr "$OUT/${id}-${ver}.zip" .)
   rm -rf "$work"
   echo "built dist/${id}-${ver}.zip"

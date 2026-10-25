@@ -1,0 +1,22 @@
+# chroot-netfix configuration.
+# Copy to /data/adb/chroot-netfix.conf, or put the real values in the
+# gitignored config/netfix.conf and let ./install.sh push it.
+#
+# CIDRs that must be routed via the main table. One or more, space-separated.
+# Typical use: a raw TUN created inside a chroot (EasyTier/WireGuard/etc.)
+# whose route lives in main, while Android netd policy routes traffic to
+# wlan0/rmnet first.
+# Example: RULE_CIDRS="10.0.0.0/24"
+RULE_CIDRS=""
+
+# Policy rule priority. Must be lower than netd's normal rules.
+RULE_PREF=9000
+
+# Flyme/Android power-save and doze chains (fw_powersave/fw_dozable) end with
+# -j DROP and only allow packets with a socket owner. Kernel-generated ICMP
+# echo replies have no owner, so pings fail while TCP works. Set to 1 to
+# insert "RETURN" for echo-reply before those chains.
+ICMP_ECHO_REPLY=0
+
+# Chain that jumps to fw_powersave / fw_standby / fw_dozable.
+IPTABLES_CHAIN=fw_OUTPUT

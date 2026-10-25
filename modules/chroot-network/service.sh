@@ -27,3 +27,35 @@ if ! grep -q '^nameserver' "$R" 2>/dev/null; then
 fi
 chmod 644 "$R" 2>/dev/null
 log "DNS1=${DNS1:-none} DNS2=${DNS2:-none} GW=${GW:-none}"
+
+# One-shot policy routing for raw TUNs. The TUN route lives in main, but
+# Android netd policy routing sends ordinary traffic to wlan0/rmnet first.
+# This is applied at boot only (no watchdog); use chroot-netfix if you need
+# automatic re-apply on network/power changes.
+apply_routes() {
+  ROUTE_CONF=/data/adb/chroot-routes.conf
+  [ -f "$ROUTE_CONF" ] || return 0
+  RULE_CIDRS=""
+  RULE_PREF=9000
+  . "$ROUTE_CONF"
+  for cidr in $RULE_CIDRS; do
+    case "$cidr" in
+      */*)
+        if ip rule show 2>/dev/null | grep -q "^${RULE_PREF}:.*to ${cidr}.*lookup main"; then
+          :
+        elif ip rule add to "$cidr" lookup main pref "$RULE_PREF" 2>/dev/null; then
+          log "route rule added: $cidr -> main (pref $RULE_PREF)"
+        else
+          log "route rule add failed: $cidr"
+        fi
+        ;;
+      *) log "invalid route CIDR: $cidr" ;;
+    esac
+  done
+}
+
+apply_routes
+# netd may still be settling right after DHCP; one retry is enough for a
+# fixed network and much cheaper than a permanent watchdog.
+sleep 5
+apply_routes
