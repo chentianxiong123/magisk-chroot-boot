@@ -12,9 +12,41 @@ for d in "$W"/modules/*/; do
   id=$(basename "$d")
   mkdir -p "/data/adb/modules/$id"
   cp -af "$d." "/data/adb/modules/$id/"
-  chmod 755 "/data/adb/modules/$id/service.sh"
+  for f in service.sh watchdog.sh uninstall.sh; do
+    if [ -f "/data/adb/modules/$id/$f" ]; then
+      chmod 755 "/data/adb/modules/$id/$f"
+    fi
+  done
   chown -R root:root "/data/adb/modules/$id"
 done
+
+if [ -f "$W/routes.conf" ]; then
+  cp -f "$W/routes.conf" /data/adb/chroot-routes.conf
+  chown root:root /data/adb/chroot-routes.conf
+  chmod 600 /data/adb/chroot-routes.conf
+  restorecon /data/adb/chroot-routes.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/netfix.conf" ]; then
+  cp -f "$W/netfix.conf" /data/adb/chroot-netfix.conf
+  chown root:root /data/adb/chroot-netfix.conf
+  chmod 600 /data/adb/chroot-netfix.conf
+  restorecon /data/adb/chroot-netfix.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/static-ip.conf" ]; then
+  cp -f "$W/static-ip.conf" /data/adb/static-ip.conf
+  chown root:root /data/adb/static-ip.conf
+  chmod 600 /data/adb/static-ip.conf
+  restorecon /data/adb/static-ip.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/postboot-tune.conf" ]; then
+  cp -f "$W/postboot-tune.conf" /data/adb/postboot-tune.conf
+  chown root:root /data/adb/postboot-tune.conf
+  chmod 600 /data/adb/postboot-tune.conf
+  restorecon /data/adb/postboot-tune.conf 2>/dev/null || true
+fi
 
 if [ -f "$W/supervisor/chroot.conf" ]; then
   mkdir -p /data/debian/etc/supervisor/conf.d
