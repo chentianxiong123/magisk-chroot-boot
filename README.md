@@ -136,6 +136,18 @@ DHCP 拿到地址，再加固定地址并删掉 DHCP 地址，系统不会继续
 
 配置见 `modules/postboot-tune/postboot-tune.conf.example`，本地放 `config/postboot-tune.conf`。
 
+## 下载与发布
+
+可以直接从 GitHub Releases 下载已打包的模块 zip，用 Magisk App「从本地安装」逐个安装；
+也可以 clone 本仓库用 `install.sh` 部署。
+
+- 正式发布：<https://github.com/chentianxiong123/magisk-chroot-boot/releases/tag/v1.0.0>
+  - 核心：`chroot-mount-1.3.0`、`chroot-network-1.1.0`、`chroot-services-1.3.0`
+  - 可选：`adb-tcp-1.0.0`、`chroot-netfix-1.0.0`、`static-ip-1.0.0`、`postboot-tune-1.0.0`
+- 历史归档：`legacy-autoboot-1.0`（旧版 AutoBoot.apk，仅留档/回滚）
+
+发布流程见 [docs/operations.md](docs/operations.md#发布流程)。
+
 ## 快速开始
 
 ```bash

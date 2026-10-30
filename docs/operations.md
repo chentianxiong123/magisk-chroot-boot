@@ -215,6 +215,34 @@ adb shell "su -c '$CTL restart <name>'"
 
 也可以用 `./build.sh` 生成 `dist/*.zip`，通过 Magisk app 的「从本地安装」安装。
 
+## 发布流程
+
+`./build.sh` 会按当前 `modules/*/module.prop` 的 `version` 把每个模块打包成
+`dist/<id>-<version>.zip`。发布前确认 dist 里是最新代码产物（旧版本 zip 不会自动清理，
+要手动删）。
+
+```bash
+./build.sh              # 生成 dist/*.zip（幂等，覆盖同名版本）
+ls dist/                # 检查只留要发布的最新版本
+```
+
+发布（示例，以 `v1.0.0` 为 tag）：
+
+```bash
+# 1) 打 tag 并推送（指向当前 HEAD）
+git tag -a v1.0.0 -m "magisk-chroot-boot v1.0.0"
+git push origin v1.0.0
+
+# 2) 创建 release 并把模块 zip 作为资产上传
+gh release create v1.0.0 \
+  --title "magisk-chroot-boot v1.0.0" \
+  --notes "..." \
+  dist/*.zip
+```
+
+注意：`dist/` 和 `backups/` 在 `.gitignore` 里，产物不进仓库；
+旧方案 APK 归档在 `legacy/`（进仓库），单独发 `legacy-autoboot-1.0`。
+
 ## 备份与恢复
 
 ```bash
