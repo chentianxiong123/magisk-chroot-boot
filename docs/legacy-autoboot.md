@@ -3,6 +3,11 @@
 旧版用一个小系统 APK (`AutoBoot.apk`) 实现开机自启，现已被 Magisk 模块方案取代。
 本文保留其细节，便于对照、排查遗留物或回滚。**当前的启动链路不需要它。**
 
+> 归档：APK 原件已收入本仓库 [`legacy/AutoBoot.apk`](../legacy/AutoBoot.apk)
+> （12,631 字节，md5 `ce6061c98d93eb4832d9821c6cea6168`），并在
+> GitHub Release `legacy-autoboot-1.0` 提供下载；本地 `~/autoboot-backup`、
+> `~/autoboot.Wpm3` 副本已清理。
+
 ## 它是什么
 
 - 包名：`com.meizu.autoboot`
@@ -102,6 +107,7 @@ adb shell su -c 'mount -o ro,remount /system'
 ```
 
 删除前已备份：`AutoBoot.apk`（12,631 字节，md5 `ce6061c98d93eb4832d9821c6cea6168`）。
+副本后收进仓库 `legacy/AutoBoot.apk` 归档，见本文开头。
 
 结果：
 
