@@ -934,3 +934,104 @@ kill -CONT $(pidof recovery)   # 恢复 UI
 kill -STOP $(pidof recovery)   # 再冻结
 ```
 
+
+---
+
+## 十七、最轻桌面框架（Xorg + jwm，~20MB）
+
+### 17.1 装最轻桌面（Xorg + jwm + xterm）
+
+```bash
+# chroot 里装（--no-install-recommends 省空间）
+apt-get update
+apt-get install -y --no-install-recommends \
+    xserver-xorg-video-fbdev \
+    x11-xserver-utils \
+    xinit \
+    jwm \
+    xterm
+
+# 换 apt 下载目录到 /tmp（/var/cache/apt 太小）
+mkdir -p /tmp/apt-cache
+echo 'Dir::Cache::archives "/tmp/apt-cache";' > /etc/apt/apt.conf.d/99-local-cache
+```
+
+**大小**：~20MB（Xorg 8MB + jwm 5MB + xterm 7MB），**不装 recommends 省一半空间**。
+
+### 17.2 xorg.conf（fbdev + fb0）
+
+```
+# /etc/X11/xorg.conf
+Section "ServerLayout"
+    Identifier "Layout0"
+    Screen 0 "Screen0"
+EndSection
+
+Section "Device"
+    Identifier "Device0"
+    Driver "fbdev"
+    Option "fbdev" "/dev/graphics/fb0"
+EndSection
+
+Section "Screen"
+    Identifier "Screen0"
+    Device "Device0"
+    DefaultDepth 24
+    SubSection "Display"
+        Depth 24
+        Modes "1080x1920"
+    EndSubSection
+EndSection
+```
+
+### 17.3 启动脚本（Xorg + jwm + xterm）
+
+```bash
+#!/bin/bash
+# /root/start-desktop.sh
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export DISPLAY=:0
+export HOME=/root
+
+# Xorg 后台（fbdev + fb0）
+Xorg :0 -config /etc/X11/xorg.conf > /tmp/xorg.log 2>&1 &
+XPID=$!
+
+# 等 X 起来
+sleep 5
+
+# jwm 后台（窗口管理器）
+jwm > /tmp/jwm.log 2>&1 &
+
+# xterm 后台（终端）
+sleep 2
+xterm -geometry 80x24+50+50 &
+
+echo "Xorg=$XPID jwm=$! xterm=$!"
+```
+
+### 17.4 实测
+
+```
+Xorg pid=3334（占 fb0，写 jwm 深灰背景）
+jwm pid=3352（窗口管理器）
+xterm pid=3369（终端窗口）
+backlight=255（亮屏）
+
+屏幕显示：jwm 桌面（深灰背景 + 顶部任务栏 + xterm 窗口）
+```
+
+### 17.5 意义
+
+**最轻桌面框架跑起来了**：
+- **Xorg + fbdev**（不用 GPU，软件渲染，兼容性好）
+- **jwm**（~5MB，最轻 WM，兼容性好）
+- **xterm**（终端，能装其他软件：firefox/gimp/libreoffice）
+- **fb0 直接显示**（不需要 Android 框架）
+- **TWRP UI 停了**（recovery 冻结，X 接管 fb0）
+
+**下一步**：
+- **VNC 远程桌面**（x11vnc，从电脑远程看）
+- **装其他软件**（firefox/gimp/libreoffice，apt 装）
+- **GPU 加速**（libhybris + Mali blob，更复杂但性能好）
+
