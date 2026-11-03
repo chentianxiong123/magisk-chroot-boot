@@ -1,0 +1,6 @@
+id=chroot-services
+name=Chroot Services (TWRP)
+version=1.0.0
+versionCode=1
+author=chentianxiong123
+description=Start supervisord inside the Debian chroot in TWRP (keeps su - root so services inherit inet/net_raw groups)

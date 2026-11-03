@@ -1,0 +1,6 @@
+id=chroot-mount
+name=Chroot Mount (TWRP)
+version=1.0.0
+versionCode=1
+author=chentianxiong123
+description=Mount Debian chroot filesystems (proc/sys/dev/devpts) and prepare tmpfs in TWRP

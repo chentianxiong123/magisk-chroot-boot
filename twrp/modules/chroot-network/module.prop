@@ -1,0 +1,6 @@
+id=chroot-network
+name=Chroot Network (TWRP)
+version=1.0.0
+versionCode=1
+author=chentianxiong123
+description=Write /data/debian/etc/resolv.conf from TWRP WiFi info (no Android net.dns1) and apply policy routes

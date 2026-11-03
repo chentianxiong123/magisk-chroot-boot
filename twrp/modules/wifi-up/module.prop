@@ -1,0 +1,6 @@
+id=wifi-up
+name=Wifi Up (TWRP)
+version=1.0.0
+versionCode=1
+author=chentianxiong123
+description=Bring up WiFi from /system in TWRP without the Android framework
