@@ -1,6 +1,0 @@
-id=postboot-tune
-name=Post-boot tune (stop + freeze)
-version=1.0.0
-versionCode=1
-author=chentianxiong123
-description=After boot settles, force-stop on-demand packages and SIGSTOP selected persistent processes. One shot, no watchdog; configured via /data/adb/postboot-tune.conf

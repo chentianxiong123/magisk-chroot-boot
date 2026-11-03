@@ -1,9 +1,0 @@
-# chroot-network one-shot policy routes (optional).
-# Copy to /data/adb/chroot-routes.conf, or use the gitignored
-# config/routes.conf and let ./install.sh push it.
-#
-# CIDRs whose traffic must consult the main table. A raw TUN's route lives in
-# main, while Android netd policy routing sends ordinary traffic to
-# wlan0/rmnet tables first. Applied once at boot; no watchdog.
-RULE_CIDRS=""
-RULE_PREF=9000

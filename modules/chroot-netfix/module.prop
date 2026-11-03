@@ -1,6 +1,0 @@
-id=chroot-netfix
-name=Chroot Netfix (policy routing + ICMP)
-version=1.0.0
-versionCode=1
-author=chentianxiong123
-description=Persist Android policy-routing rules and allow kernel-generated ICMP echo replies for chroot TUN setups; configured via /data/adb/chroot-netfix.conf

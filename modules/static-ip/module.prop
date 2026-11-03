@@ -1,6 +1,0 @@
-id=static-ip
-name=Static IP (one-shot)
-version=1.0.0
-versionCode=1
-author=chentianxiong123
-description=After boot, add a static IPv4 address and drop the DHCP lease from wlan0. One shot, no watchdog; configured via /data/adb/static-ip.conf
