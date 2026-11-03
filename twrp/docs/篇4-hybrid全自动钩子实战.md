@@ -766,3 +766,171 @@ cpu4-7: 1807000 (1.807 GHz，大核全速)
 
 **服务器场景**：8 核 CPU 可用于 chroot 服务（cpa/freellmapi）的多线程负载。
 
+
+---
+
+## 十五、framebuffer 直接绘制（验证图形栈控制）
+
+### 15.1 能否控制图像？——能
+
+**fb0 参数**：
+```
+/dev/graphics/fb0  crw-rw---- root graphics 29,0
+virtual_size = 1088x3840  (double buffer)
+bpp = 32                  (4 字节/像素)
+stride = 4352             (每行 4352 字节，1080 可视 + 8 padding)
+可视分辨率 1080x1920
+```
+
+**recovery 占用**：
+```
+recovery (pid 2351) mmap 了 /dev/graphics/fb0
+地址 7562818000-7564000000 (rw-s)
+```
+
+**结论**：fb0 可读可写（root 权限），recovery 会持续重绘，**必须先冻结 recovery UI 线程**才能写入不被覆盖。
+
+### 15.2 画三角形步骤
+
+```python
+# 1. Python 生成 RGB565 → 32bpp fb0 数据
+W, H = 1080, 1920
+STRIDE = 4352
+PIXEL = 4  # BGRA little-endian
+
+def set_pixel(x, y, r, g, b):
+    offset = y * STRIDE + x * PIXEL
+    buf[offset:offset+4] = struct.pack('<BBBB', b, g, r, 0xff)
+
+# 画 3 个三角形（红/绿/蓝）
+draw_triangle([(540, 200), (240, 800), (840, 800)], 255, 0, 0)
+draw_triangle([(540, 600), (240, 1200), (840, 1200)], 0, 255, 0)
+draw_triangle([(540, 1000), (240, 1600), (840, 1600)], 0, 0, 255)
+
+# 2. 推到设备
+adb push fb_tri.rgb /tmp/fb_tri.rgb
+
+# 3. 冻结 recovery
+adb shell "kill -STOP $(pidof recovery)"
+
+# 4. 写 fb0
+adb shell "cat /tmp/fb_tri.rgb > /dev/graphics/fb0"
+
+# 5. 恢复 recovery
+adb shell "kill -CONT $(pidof recovery)"
+```
+
+### 15.3 实测结果
+
+```
+/tmp/fb_tri.rgb: 1 file pushed, 0 skipped. 7.2 MB/s (8355840 bytes)
+cat /tmp/fb_tri.rgb > /dev/graphics/fb0  →  写入完成
+屏幕显示：3 个三角形（红/绿/蓝）+ 黑底 + 顶部灰条 + 白色边框 ✅
+recovery 恢复后（kill -CONT）：State: S (sleeping) ✅
+```
+
+### 15.4 关键点
+
+1. **fb0 是线性 framebuffer**（线性像素，offset = y*stride + x*4）
+2. **MTK fbdev 是 BGRA**（little-endian，`<BBBB` = b,g,r,a）
+3. **recovery 会重绘**（必须先 `kill -STOP` 冻结）
+4. **double buffer**（1088x3840 虚拟，1920 是 back buffer）
+5. **可逆**（写完 `kill -CONT` 恢复 recovery）
+
+### 15.5 意义
+
+**图形栈完全可控**：
+- **fb0 直接写入**（不需要 Android 框架）
+- **任意图像可显示**（三角形/文字/PNG 解码后的图，都是像素操作）
+- **TWRP 自己也这么做**（minui 库 = 直接写 fb0 + libpng）
+
+**下一步可能**：
+- **Xorg + fbdev 软渲染**（chroot 里 apt 装 xorg-server-xfbdev）
+- **VNC 远程桌面**（chroot 里跑 x11vnc，远程看桌面）
+- **libhybris + Mali blob**（借 Android GPU 加速，更复杂但性能好）
+
+
+---
+
+## 十六、干净底座（冻结 TWRP UI，只跑底层服务）
+
+### 16.1 需求
+
+**"干净底座"**：冻结 TWRP UI（触屏无响应），只保留底层服务（fuelgauged/wpa_supplicant/sshd/adbd/chroot），变成纯 SSH 操作的 Linux 服务器底座。
+
+### 16.2 实现
+
+```bash
+# 1. 冻结 recovery（TWRP UI 线程）
+kill -STOP $(pidof recovery)
+
+# 2. 确认冻结
+grep State /proc/$(pidof recovery)/status  →  State: T (stopped)
+
+# 3. 恢复（如果需要 UI）
+kill -CONT $(pidof recovery)
+```
+
+### 16.3 服务保留情况
+
+| 服务 | 停 UI 前 | 停 UI 后 |
+|---|---|---|
+| recovery（TWRP UI） | 1（running） | **1（stopped，冻结）** |
+| fuelgauged | 1 | 1（还跑） |
+| wpa_supplicant | 1 | 1（还跑，WiFi 通） |
+| adbd（无线 adb） | 1 | 1（还跑） |
+| sshd | 1 | 1（还跑，SSH 通） |
+| 触屏响应 | 有 | **无（UI 冻结）** |
+
+### 16.4 正确 SSH 连接
+
+**之前的误解**：以为 SSH 是 192.168.31.227:2222，实际是 **192.168.31.213:22**。
+
+```
+~/.ssh/config:
+Host meilan-phone1
+    HostName 192.168.31.213
+    User root
+    Port 22
+
+# 连接
+ssh meilan-phone1
+# 或
+ssh root@192.168.31.213
+```
+
+### 16.5 实测
+
+```
+recovery pid=2351
+State: T (stopped)      ← 冻结成功
+
+fuelgauged=1            ← 还跑
+wpa_supplicant=1        ← 还跑（WiFi 通 192.168.31.213）
+adbd=1                  ← 还跑（无线 adb 5555）
+sshd=1                  ← 还跑（SSH 22）
+
+ssh meilan-phone1
+SSH_OK
+02:47:36 up 1:38, 0 users, load average: 10.01, 10.13, 10.35
+```
+
+### 16.6 意义
+
+**干净底座搭好了**：
+- **TWRP UI 冻结**（触屏无响应，不渲染）
+- **底层服务全活**（fuelgauged/wpa_supplicant/sshd/adbd/chroot）
+- **纯 SSH 操作**（从电脑远程管理，不需要触屏）
+- **省电**（UI 不渲染，节省 CPU/GPU）
+
+**适合场景**：
+- **服务器部署**（SSH 远程操作，不需要触屏 UI）
+- **省电运行**（UI 不渲染，CPU 负载低）
+- **稳定运行**（避免 UI bug 影响，只跑核心服务）
+
+**可逆**：
+```bash
+kill -CONT $(pidof recovery)   # 恢复 UI
+kill -STOP $(pidof recovery)   # 再冻结
+```
+
