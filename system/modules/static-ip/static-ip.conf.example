@@ -1,0 +1,14 @@
+# static-ip configuration.
+# Copy to /data/adb/static-ip.conf, or put the real values in the gitignored
+# config/static-ip.conf and let ./install.sh push it.
+#
+# The module waits for a DHCP address in SUBNET, then adds STATIC_IP and
+# deletes every other IPv4 address on IFACE. One shot; no watchdog.
+
+STATIC_IP=192.168.31.213
+PREFIX=24
+IFACE=wlan0
+
+# Prefix used to recognize the DHCP lease that should be replaced, e.g.
+# "192.168.31." matches 192.168.31.7/24.
+SUBNET=192.168.31.

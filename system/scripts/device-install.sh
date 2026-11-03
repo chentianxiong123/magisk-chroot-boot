@@ -1,0 +1,101 @@
+#!/system/bin/sh
+set -e
+
+T="$1"
+W=/data/local/tmp/chroot-setup
+rm -rf "$W"
+mkdir -p "$W"
+/data/adb/magisk/busybox tar xzf "$T" -C "$W"
+
+mkdir -p /data/adb/modules
+for d in "$W"/modules/*/; do
+  id=$(basename "$d")
+  mkdir -p "/data/adb/modules/$id"
+  cp -af "$d." "/data/adb/modules/$id/"
+  for f in service.sh watchdog.sh uninstall.sh; do
+    if [ -f "/data/adb/modules/$id/$f" ]; then
+      chmod 755 "/data/adb/modules/$id/$f"
+    fi
+  done
+  chown -R root:root "/data/adb/modules/$id"
+done
+
+if [ -f "$W/routes.conf" ]; then
+  cp -f "$W/routes.conf" /data/adb/chroot-routes.conf
+  chown root:root /data/adb/chroot-routes.conf
+  chmod 600 /data/adb/chroot-routes.conf
+  restorecon /data/adb/chroot-routes.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/netfix.conf" ]; then
+  cp -f "$W/netfix.conf" /data/adb/chroot-netfix.conf
+  chown root:root /data/adb/chroot-netfix.conf
+  chmod 600 /data/adb/chroot-netfix.conf
+  restorecon /data/adb/chroot-netfix.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/static-ip.conf" ]; then
+  cp -f "$W/static-ip.conf" /data/adb/static-ip.conf
+  chown root:root /data/adb/static-ip.conf
+  chmod 600 /data/adb/static-ip.conf
+  restorecon /data/adb/static-ip.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/postboot-tune.conf" ]; then
+  cp -f "$W/postboot-tune.conf" /data/adb/postboot-tune.conf
+  chown root:root /data/adb/postboot-tune.conf
+  chmod 600 /data/adb/postboot-tune.conf
+  restorecon /data/adb/postboot-tune.conf 2>/dev/null || true
+fi
+
+if [ -f "$W/supervisor/chroot.conf" ]; then
+  mkdir -p /data/debian/etc/supervisor/conf.d
+  cp -f "$W/supervisor/chroot.conf" /data/debian/etc/supervisor/conf.d/chroot.conf
+  chown root:root /data/debian/etc/supervisor/conf.d/chroot.conf
+fi
+
+# Android 内核 CONFIG_ANDROID_PARANOID_NETWORK 只放行 GID 3003(inet) /
+# 3004(net_raw) 的进程；只靠 root 不够，ping 等丢 cap 的 raw socket 会被拒。
+G=/data/debian/etc/group
+if [ -f "$G" ]; then
+  cp -f "$G" "$G.bak.$(date +%s)" 2>/dev/null || true
+  /data/adb/magisk/busybox awk -F: -v OFS=: '
+    $1 == "inet" {
+      if ($4 !~ /(^|,)root(,|$)/) $4 = ($4 == "" ? "root" : $4 ",root")
+      ok_inet = 1
+    }
+    $1 == "net_raw" {
+      if ($4 !~ /(^|,)root(,|$)/) $4 = ($4 == "" ? "root" : $4 ",root")
+      ok_raw = 1
+    }
+    { print }
+    END {
+      if (!ok_inet) print "inet:x:3003:root"
+      if (!ok_raw) print "net_raw:x:3004:root"
+    }
+  ' "$G" > "$G.tmp" && mv -f "$G.tmp" "$G"
+  chown root:root "$G"
+  chmod 644 "$G"
+  echo "android network groups:"
+  grep -E '^(inet|net_raw):' "$G"
+fi
+
+# apt 的下载进程以 _apt 运行；GID 65534 没有 inet 组，会报 DNS 解析失败。
+P=/data/debian/etc/passwd
+if [ -f "$P" ]; then
+  grep -q '^_apt:x:42:3003:' "$P" || sed -i 's/^_apt:x:42:65534:/_apt:x:42:3003:/' "$P"
+  chown root:root "$P"
+  chmod 644 "$P"
+fi
+if [ -d /data/debian/etc/apt ]; then
+  mkdir -p /data/debian/etc/apt/apt.conf.d
+  [ -f /data/debian/etc/apt/apt.conf.d/99sandbox ] || \
+    echo 'APT::Sandbox::User "root";' > /data/debian/etc/apt/apt.conf.d/99sandbox
+  chmod 644 /data/debian/etc/apt/apt.conf.d/99sandbox
+fi
+
+restorecon -R /data/adb/modules 2>/dev/null || true
+rm -rf "$W" "$T"
+
+echo "installed modules:"
+ls -1 /data/adb/modules

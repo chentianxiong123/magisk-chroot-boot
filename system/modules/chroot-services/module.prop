@@ -1,0 +1,6 @@
+id=chroot-services
+name=Chroot Services (supervisord + adbd)
+version=1.3.0
+versionCode=4
+author=chentianxiong123
+description=Start supervisord inside a Debian chroot via su - root so all services inherit Android inet/net_raw groups

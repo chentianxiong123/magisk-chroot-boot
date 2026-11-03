@@ -1,0 +1,6 @@
+id=adb-tcp
+name=ADB over TCP
+version=1.0.0
+versionCode=1
+author=chentianxiong123
+description=Enable adb over TCP (port 5555) after Android boot; independent of any chroot
