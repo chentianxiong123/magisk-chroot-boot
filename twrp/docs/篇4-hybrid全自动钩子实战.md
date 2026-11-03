@@ -1035,3 +1035,107 @@ backlight=255（亮屏）
 - **装其他软件**（firefox/gimp/libreoffice，apt 装）
 - **GPU 加速**（libhybris + Mali blob，更复杂但性能好）
 
+
+---
+
+## 十八、远程桌面（爆屏手机，scrcpy 用不了，用 x11vnc）
+
+### 18.1 背景
+
+**手机爆屏**（触屏碎，无法直接看/操作）→ **需要远程桌面**（电脑看 + 遥控）。
+
+**scrcpy 为什么用不了**：
+- scrcpy 需要 Android 框架（SurfaceFlinger + MediaProjection）
+- TWRP 没框架，scrcpy 连不上
+- **爆屏也不影响 scrcpy**（scrcpy 是软件镜像，不走物理屏），**但 TWRP 环境没框架**
+
+**解决方案：x11vnc + SSH 隧道 + vncviewer**
+
+### 18.2 装 x11vnc
+
+```bash
+# chroot 里装（--no-install-recommends 省空间）
+apt-get install -y --no-install-recommends x11vnc
+```
+
+### 18.3 启动 x11vnc（-noshm 必须）
+
+**坑 18.1：-nopass 是无效选项**（正确的是 -nopw）
+
+**坑 18.2：shmget: Function not implemented**（内核没 SYSV IPC 共享内存）
+
+**解法：-noshm 禁用 shm**
+
+```bash
+# /root/start-vnc.sh
+#!/bin/bash
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export DISPLAY=:0
+export HOME=/root
+
+# 杀旧 x11vnc
+pkill -9 x11vnc 2>/dev/null
+sleep 1
+
+# 启动 x11vnc（-nopw 无密码，-noshm 禁 shm，-forever 不退出）
+nohup x11vnc -display :0 \
+    -nopw -noshm \
+    -forever \
+    -listen 0.0.0.0 \
+    -rfbport 5900 \
+    -noxdamage \
+    > /tmp/x11vnc.log 2>&1 &
+
+echo "x11vnc 启动，PID=$!"
+sleep 3
+```
+
+### 18.4 SSH 隧道（电脑 → 设备）
+
+```bash
+# 电脑上起 SSH 隧道（本地 5900 → 设备 5900）
+ssh -f -N -L 5900:localhost:5900 meilan-phone1
+
+# 验证
+ss -tln | grep 5900
+# LISTEN 0 128 127.0.0.1:5900 0.0.0.0:*
+```
+
+### 18.5 电脑连 VNC（vncviewer）
+
+```bash
+# 装 tigervnc-viewer
+sudo apt install -y tigervnc-viewer
+
+# 连 VNC（无密码）
+vncviewer -SecurityTypes None localhost:5900
+```
+
+### 18.6 实测
+
+```
+设备：Xorg(3334) + jwm(3352) + xterm(3369) + x11vnc(4624) 全跑
+电脑：vncviewer(13683) 连 localhost:5900（SSH 隧道）
+显示：jwm 桌面（深灰背景 + 顶部任务栏 + xterm 窗口）
+操作：vncviewer 鼠标点击 = 设备触屏，键盘输入 = 设备键盘
+```
+
+### 18.7 意义
+
+**爆屏手机远程桌面方案**（scrcpy 用不了，用 x11vnc）：
+- **x11vnc**（设备跑 X server，x11vnc 转发到 5900）
+- **SSH 隧道**（加密，绕防火墙）
+- **vncviewer**（电脑客户端，看 + 控制）
+- **爆屏不影响**（VNC 是软件镜像，不走物理屏）
+- **遥控操作**（vncviewer 鼠标/键盘 = 设备触屏/键盘）
+
+**适合场景**：
+- **爆屏手机**（触屏碎，无法直接看/操作）
+- **无头服务器**（没屏幕，远程管理）
+- **远程协助**（从电脑操作设备桌面）
+
+**坑总结**：
+- **-nopass 无效**（正确的是 -nopw）
+- **shmget: Function not implemented**（加 -noshm 禁 shm）
+- **-noxdamage**（避免 X DAMAGE 失败）
+
